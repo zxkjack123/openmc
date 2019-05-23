@@ -6,14 +6,13 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # Setup environment variables for Docker image
 
 # setup home dir
-RUN mkdir -p /home/zxk
-ENV HOME /home/zxk
+ENV HOME /root
 # env settings for OpenMC
 ENV FC=/usr/bin/mpif90 CC=/usr/bin/mpicc CXX=/usr/bin/mpicxx \
     PATH=$HOME/opt/openmc/bin:$HOME/opt/NJOY2016/build:$PATH \
     LD_LIBRARY_PATH=$HOME/opt/openmc/lib:$LD_LIBRARY_PATH \
-    OPENMC_CROSS_SECTIONS=$HOME/opt/nndc_hdf5/cross_sections.xml \
-    OPENMC_ENDF_DATA=$HOME/opt/endf-b-vii.1
+    OPENMC_CROSS_SECTIONS=$HOME/nndc_hdf5/cross_sections.xml \
+    OPENMC_ENDF_DATA=$HOME/endf-b-vii.1
 
 # Install dependencies from Debian package manager
 RUN apt-get update -y && \
@@ -57,7 +56,8 @@ RUN pip3 install --force-reinstall \
             numpy \
             nose \
             cython \
-            future
+            future \
+            scipy
 
 # Clone and install NJOY2016
 RUN git clone https://github.com/njoy/NJOY2016 $HOME/opt/NJOY2016 && \
