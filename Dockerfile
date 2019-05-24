@@ -10,7 +10,7 @@ ENV HOME /root
 # env settings for OpenMC
 ENV FC=/usr/bin/mpif90 CC=/usr/bin/mpicc CXX=/usr/bin/mpicxx \
     PATH=$HOME/opt/openmc/bin:$HOME/opt/NJOY2016/build:$PATH \
-    LD_LIBRARY_PATH=$HOME/opt/openmc/lib:$LD_LIBRARY_PATH \
+    LD_LIBRARY_PATH=$HOME/opt/OPENMC/lib:$LD_LIBRARY_PATH \
     OPENMC_CROSS_SECTIONS=$HOME/nndc_hdf5/cross_sections.xml \
     OPENMC_ENDF_DATA=$HOME/endf-b-vii.1
 
@@ -115,7 +115,9 @@ ENV LIBRARY_PATH $HOME/opt/DAGMC/lib:$LIBRARY_PATH
 # Clone and install OpenMC
 RUN mkdir -p $HOME/opt/OPENMC &&  cd $HOME/opt/OPENMC  && \
     git clone https://github.com/zxkjack123/openmc.git && \
-    cd openmc && git checkout develop && \
+    cd openmc && \
+    git remote add upstream https://github.com/openmc-dev/openmc.git && \
+    git checkout develop && git pull upstream develop && \
     cd $HOME/opt/OPENMC/ && mkdir build && cd build && \
     cmake ../openmc \
         -Doptimize=on \
