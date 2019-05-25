@@ -123,6 +123,7 @@ RUN mkdir -p $HOME/opt/OPENMC &&  cd $HOME/opt/OPENMC  && \
         -Doptimize=on \
         -DHDF5_PREFER_PARALLEL=on \
         -DCMAKE_INSTALL_PREFIX=$HOME/opt/OPENMC \
+        -Ddebug=ON \
         -Ddagmc=ON \
         -DDAGMC_ROOT=$HOME/opt/DAGMC && \
     make && make install && \
