@@ -113,25 +113,25 @@ ENV LD_LIBRARY_PATH $HOME/opt/DAGMC/lib:$LD_LIBRARY_PATH
 ENV LIBRARY_PATH $HOME/opt/DAGMC/lib:$LIBRARY_PATH
 
 # Clone and install OpenMC
-RUN mkdir -p $HOME/opt/OPENMC &&  cd $HOME/opt/OPENMC  && \
+RUN cd $HOME/opt  && \
     git clone https://github.com/zxkjack123/openmc.git && \
     cd openmc && \
     git remote add upstream https://github.com/openmc-dev/openmc.git && \
     git checkout develop && git pull upstream develop && \
-    cd $HOME/opt/OPENMC/ && mkdir build && cd build && \
+    cd $HOME/opt/openmc && mkdir build && cd build && \
     cmake ../openmc \
         -Doptimize=on \
         -DHDF5_PREFER_PARALLEL=on \
-        -DCMAKE_INSTALL_PREFIX=$HOME/opt/OPENMC \
+        -DCMAKE_INSTALL_PREFIX=$HOME/opt/OpenMC \
         -Ddebug=ON \
         -Ddagmc=ON \
         -DDAGMC_ROOT=$HOME/opt/DAGMC && \
     make && make install && \
     cd ../openmc && pip install -e .[test]
 
-ENV PATH=$HOME/opt/OPENMC/bin:$PATH
-ENV LD_LIBRARY_PATH=$HOME/opt/OPENMC/lib:$LD_LIBRARY_PATH
-ENV LIBRARY_PATH=$HOME/opt/OPENMC/lib:$LIBRARY_PATH
+ENV PATH=$HOME/opt/OpenMC/bin:$PATH
+ENV LD_LIBRARY_PATH=$HOME/opt/OpenMC/lib:$LD_LIBRARY_PATH
+ENV LIBRARY_PATH=$HOME/opt/OpenMC/lib:$LIBRARY_PATH
 
 # Download cross sections (NNDC and WMP) and ENDF data needed by test suite
-RUN $HOME/opt/OPENMC/openmc/tools/ci/download-xs.sh
+RUN $HOME/opt/openmc/tools/ci/download-xs.sh
