@@ -57,6 +57,7 @@ RUN pip3 install --force-reinstall \
             nose \
             cython \
             future \
+            tables \
             scipy
 
 # Clone and install NJOY2016
