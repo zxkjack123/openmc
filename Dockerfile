@@ -128,7 +128,7 @@ RUN cd $HOME/opt  && \
         -Ddagmc=ON \
         -DDAGMC_ROOT=$HOME/opt/DAGMC && \
     make && make install && \
-    cd ../openmc && pip install -e .[test]
+    cd ../openmc && pip install -e .[test] && rm -rf ./pip-wheel-metadata
 
 ENV PATH=$HOME/opt/OpenMC/bin:$PATH
 ENV LD_LIBRARY_PATH=$HOME/opt/OpenMC/lib:$LD_LIBRARY_PATH
