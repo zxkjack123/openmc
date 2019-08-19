@@ -76,14 +76,12 @@ RUN mkdir -p $HOME/opt/MOAB5.1 && cd $HOME/opt/MOAB5.1 && \
     # build/install static lib
     cmake ../moab -DCMAKE_INSTALL_PREFIX=$HOME/opt/MOAB5.1 \
               -DENABLE_HDF5=ON \
-              #-DENABLE_PYMOAB=ON \
               -DBUILD_SHARED_LIBS=OFF  && \
     make -j 4 && \
     make install && \
     # build/install shared lib
     cmake ../moab -DCMAKE_INSTALL_PREFIX=$HOME/opt/MOAB5.1 \
               -DENABLE_HDF5=ON \
-              #-DENABLE_PYMOAB=ON \
               -DBUILD_SHARED_LIBS=ON  && \
     make -j 4 && \
     make install && \
@@ -120,7 +118,7 @@ RUN cd $HOME/opt  && \
     git remote add upstream https://github.com/openmc-dev/openmc.git && \
     git checkout develop && git pull upstream develop && \
     cd $HOME/opt/openmc && mkdir build && cd build && \
-    cmake ../openmc \
+    cmake ../ \
         -Doptimize=on \
         -DHDF5_PREFER_PARALLEL=on \
         -DCMAKE_INSTALL_PREFIX=$HOME/opt/OpenMC \
