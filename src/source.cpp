@@ -23,6 +23,7 @@
 #include "openmc/simulation.h"
 #include "openmc/state_point.h"
 #include "openmc/xml_interface.h"
+#include <ctime> // for time counter
 
 namespace openmc {
 
@@ -264,6 +265,9 @@ void initialize_source()
     } 
 
 #ifdef DAGMC
+    std::clock_t c_start = std::clock();
+    long double time_elapsed;
+
     // Read in the pyne_r2s_source
     if (filetype == "pyne_r2s_source") {
       // check pyne_source_mode
@@ -276,6 +280,10 @@ void initialize_source()
       }
       // initial sampler
       pyne::Sampler* sampler = initialize_pyne_sampler();
+      std::clock_t c_end1 = std::clock();
+      time_elapsed = (c_end1-c_start) / CLOCKS_PER_SEC;
+      std::cout << "CPU time after initial sampler: " << time_elapsed << " s\n";
+
       // Generation source sites from pyne source
       for (int64_t i = 0; i < simulation::work_per_rank; ++i) {
       // initialize random number seed
@@ -286,6 +294,9 @@ void initialize_source()
       // sample external source distribution
       simulation::source_bank[i] = sample_pyne_source(sampler);
       }
+      std::clock_t c_end2 = std::clock();
+      time_elapsed = (c_end2-c_start) / CLOCKS_PER_SEC;
+      std::cout << "CPU time after source bank: " << time_elapsed << " s\n";
     }
 #endif
 

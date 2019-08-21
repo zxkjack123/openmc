@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <string>
+#include <ctime> // for time counter
 
 //==============================================================================
 // C API functions
@@ -38,14 +39,23 @@
 
 int openmc_run()
 {
+  std::clock_t c_start = std::clock();
+  long double time_elapsed;
   openmc_simulation_init();
+  std::clock_t c_end1 = std::clock();
+  time_elapsed = (c_end1-c_start) / CLOCKS_PER_SEC;
+  std::cout << "CPU time after simulation inti: " << time_elapsed << " s\n";
+
 
   int err = 0;
   int status = 0;
   while (status == 0 && err == 0) {
     err = openmc_next_batch(&status);
   }
-
+  std::clock_t c_end2 = std::clock();
+  time_elapsed = (c_end2-c_start) / CLOCKS_PER_SEC;
+  std::cout << "CPU time after simulation: " << time_elapsed << " s\n";
+ 
   openmc_simulation_finalize();
   return err;
 }
