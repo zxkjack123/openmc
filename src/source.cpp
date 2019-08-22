@@ -446,6 +446,10 @@ Particle::Bank sample_pyne_source(pyne::Sampler* sampler)
   // Set the random number generator back to the tracking stream.
   prn_set_stream(STREAM_TRACKING);
 
+  // print the location
+  std::cout<<"x, y, z:"<<site.r[0]<<", "<<site.r[1]<<", "<<site.r[2]<<std::endl;
+  std::cout<<"u, v, w:"<<site.u[0]<<", "<<site.u[1]<<", "<<site.u[2]<<std::endl;
+  std::cout<<"erg:"<<site.E<<" eV"<<std::endl;
   return site;
 }
 
@@ -457,7 +461,7 @@ Particle::Bank convert_pyne_source_particle(pyne::SourceParticle pyne_src)
   // Sample angle
   UPtrAngle angle_ = UPtrAngle{new Isotropic()};
   site.u = angle_->sample();
-  site.E = pyne_src.get_e() * 1.0e6; // pyne src energy unit is MeV
+  site.E = pyne_src.get_e();
   site.wgt = pyne_src.get_w();
   site.delayed_group = 0;
   // Check for particle type
