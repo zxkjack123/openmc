@@ -9,7 +9,7 @@ authors = [
 ]
 description = "OpenMC"
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -33,6 +33,7 @@ dependencies = [
     "matplotlib",
     "pandas",
     "lxml",
+    "typing_extensions; python_version < '3.11'",
     "uncertainties",
     "setuptools",
     "endf",

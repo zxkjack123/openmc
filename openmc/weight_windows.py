@@ -2,7 +2,10 @@ from __future__ import annotations
 from numbers import Real, Integral
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Self
+try:
+    from typing import Self  # Python 3.11+
+except ImportError:
+    from typing_extensions import Self  # Python <3.11
 import warnings
 
 import lxml.etree as ET
