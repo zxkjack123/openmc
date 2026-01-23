@@ -103,6 +103,10 @@ CMakeSettings.json
 
 # Visual Studio Code configuration files
 .vscode/
+.devcontainer/
+
+# Local install prefix (CMake)
+install/
 
 # Python pickle files
 *.pkl

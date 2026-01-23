@@ -9,7 +9,7 @@ authors = [
 ]
 description = "OpenMC"
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = {file = "LICENSE"}
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -33,6 +33,7 @@ dependencies = [
     "matplotlib",
     "pandas",
     "lxml",
+    "typing_extensions; python_version < '3.11'",
     "uncertainties",
     "setuptools",
     "endf",
@@ -41,15 +42,22 @@ dependencies = [
 [project.optional-dependencies]
 depletion-mpi = ["mpi4py"]
 docs = [
-    "sphinx==5.0.2",
+    "sphinx",
     "sphinxcontrib-katex",
     "sphinx-numfig",
     "jupyter",
     "sphinxcontrib-svg2pdfconverter",
-    "sphinx-rtd-theme==1.0.0"
+    "sphinx-rtd-theme"
 ]
-test = ["packaging", "pytest", "pytest-cov", "colorama", "openpyxl"]
-ci = ["cpp-coveralls", "coveralls"]
+test = [
+    "packaging",
+    "pytest",
+    "pytest-cov>=4.0",
+    "pytest-rerunfailures",
+    "colorama",
+    "openpyxl",
+]
+ci = ["coverage>=7.4", "gcovr>=7.2"]
 vtk = ["vtk"]
 
 [project.urls]
