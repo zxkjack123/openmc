@@ -132,11 +132,9 @@ if(OPENMC_USE_HIP)
   elseif(EXISTS /opt/dtk)
     list(APPEND CMAKE_PREFIX_PATH /opt/dtk)
   endif()
-
-  enable_language(HIP)
-  find_package(hip REQUIRED)
-  message(STATUS "Found HIP: ${hip_DIR} (version ${hip_VERSION})")
-  message(STATUS "HIP compiler: ${CMAKE_HIP_COMPILER}")
+  # Note: We skip enable_language(HIP) because CMake 3.29 rejects the hipcc
+  # wrapper and DTK's clang setup is non-standard. Instead, .hip files are
+  # compiled via custom commands invoking hipcc directly (see below).
 endif()
 
 #===============================================================================
@@ -583,7 +581,85 @@ endif()
 
 if (OPENMC_USE_HIP)
   target_compile_definitions(libopenmc PUBLIC OPENMC_USE_HIP)
-  target_link_libraries(libopenmc hip::device)
+
+  # Compile HIP source files directly with hipcc via custom commands.
+  # CMake 3.29's enable_language(HIP) fails with DTK 25.04.1, so we bypass
+  # CMake's HIP language support and invoke hipcc directly.
+  find_program(HIPCC_EXECUTABLE hipcc
+    HINTS $ENV{ROCM_PATH}/bin $ENV{HIP_PATH}/bin /opt/dtk/bin)
+  if(NOT HIPCC_EXECUTABLE)
+    message(FATAL_ERROR "hipcc not found. Set ROCM_PATH or HIP_PATH.")
+  endif()
+  message(STATUS "Using hipcc: ${HIPCC_EXECUTABLE}")
+
+  set(OPENMC_HIP_ARCH "gfx936" CACHE STRING "HIP GPU architecture target")
+  set(HIP_OBJ_DIR ${CMAKE_CURRENT_BINARY_DIR}/hip_objects)
+
+  set(HIP_INCLUDE_FLAGS
+    -I${CMAKE_CURRENT_SOURCE_DIR}/include
+    -I${CMAKE_BINARY_DIR}/include
+    -I${CMAKE_CURRENT_SOURCE_DIR}/vendor/fmt/include
+    -I${CMAKE_CURRENT_SOURCE_DIR}/vendor/pugixml/src
+  )
+  # Add HDF5 include directories
+  foreach(dir ${HDF5_INCLUDE_DIRS})
+    list(APPEND HIP_INCLUDE_FLAGS -I${dir})
+  endforeach()
+  if(OPENMC_USE_MPI)
+    # Get MPI include dirs for hipcc
+    get_target_property(MPI_INC MPI::MPI_CXX INTERFACE_INCLUDE_DIRECTORIES)
+    if(MPI_INC)
+      foreach(dir ${MPI_INC})
+        list(APPEND HIP_INCLUDE_FLAGS -I${dir})
+      endforeach()
+    endif()
+    list(APPEND HIP_INCLUDE_FLAGS -DOPENMC_MPI)
+  endif()
+
+  set(HIP_COMPILE_FLAGS
+    -std=c++17 -fPIC -O2
+    --offload-arch=${OPENMC_HIP_ARCH}
+    -DOPENMC_USE_HIP
+    -DFMT_EXCEPTIONS=0
+  )
+
+  # List of HIP source files
+  set(OPENMC_HIP_SOURCES
+    src/hip/xs_data_device.hip
+  )
+
+  set(HIP_OBJECTS "")
+  foreach(hip_src ${OPENMC_HIP_SOURCES})
+    get_filename_component(hip_name ${hip_src} NAME_WE)
+    set(hip_obj ${HIP_OBJ_DIR}/${hip_name}.hip.o)
+    add_custom_command(
+      OUTPUT ${hip_obj}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${HIP_OBJ_DIR}
+      COMMAND ${HIPCC_EXECUTABLE}
+        -c ${CMAKE_CURRENT_SOURCE_DIR}/${hip_src}
+        -o ${hip_obj}
+        ${HIP_INCLUDE_FLAGS}
+        ${HIP_COMPILE_FLAGS}
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${hip_src}
+      COMMENT "Building HIP object ${hip_name}.hip.o"
+      VERBATIM
+    )
+    list(APPEND HIP_OBJECTS ${hip_obj})
+  endforeach()
+
+  add_custom_target(openmc_hip_objects DEPENDS ${HIP_OBJECTS})
+  add_dependencies(libopenmc openmc_hip_objects)
+  target_link_libraries(libopenmc ${HIP_OBJECTS})
+
+  # Link HIP runtime
+  find_library(AMDHIP64_LIB amdhip64
+    HINTS $ENV{ROCM_PATH}/lib $ENV{HIP_PATH}/lib /opt/dtk/lib)
+  if(AMDHIP64_LIB)
+    target_link_libraries(libopenmc ${AMDHIP64_LIB})
+    message(STATUS "Linked HIP runtime: ${AMDHIP64_LIB}")
+  else()
+    message(FATAL_ERROR "libamdhip64 not found")
+  endif()
 endif()
 
 if (OPENMC_USE_MPI)

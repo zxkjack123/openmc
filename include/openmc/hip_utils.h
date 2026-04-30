@@ -23,7 +23,7 @@
   do {                                                                         \
     hipError_t err = call;                                                     \
     if (err != hipSuccess) {                                                   \
-      fatal_error(fmt::format(                                                 \
+      openmc::fatal_error(fmt::format(                                         \
         "HIP error: {} at {}:{}", hipGetErrorString(err), __FILE__,            \
         __LINE__));                                                            \
     }                                                                          \

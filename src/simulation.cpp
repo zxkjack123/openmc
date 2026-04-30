@@ -27,6 +27,10 @@
 #include "openmc/track_output.h"
 #include "openmc/weight_windows.h"
 
+#ifdef OPENMC_USE_HIP
+#include "openmc/hip/xs_data_device.h"
+#endif
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -162,6 +166,11 @@ int openmc_simulation_init()
     openmc_weight_windows_import(settings::weight_windows_file.c_str());
   }
 
+#ifdef OPENMC_USE_HIP
+  // Copy nuclear cross section data to device memory
+  hip::copy_xs_data_to_device();
+#endif
+
   // Set flag indicating initialization is done
   simulation::initialized = true;
   return 0;
@@ -224,6 +233,11 @@ int openmc_simulation_finalize()
   }
   if (settings::check_overlaps)
     print_overlap_check();
+
+#ifdef OPENMC_USE_HIP
+  // Free device-side cross section data
+  hip::free_xs_data_on_device();
+#endif
 
   // Reset flags
   simulation::initialized = false;
