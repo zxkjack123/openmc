@@ -3,6 +3,8 @@
 
 #include <cstdint>
 
+#include "openmc/hip_utils.h"
+
 namespace openmc {
 
 //==============================================================================
@@ -23,7 +25,7 @@ constexpr uint64_t DEFAULT_STRIDE {152917ULL};
 //! @return A random number between 0 and 1
 //==============================================================================
 
-double prn(uint64_t* seed);
+OPENMC_HOST_DEVICE double prn(uint64_t* seed);
 
 //==============================================================================
 //! Generate a random number which is 'n' times ahead from the current seed.
@@ -36,7 +38,7 @@ double prn(uint64_t* seed);
 //! @return A random number between 0 and 1
 //==============================================================================
 
-double future_prn(int64_t n, uint64_t seed);
+OPENMC_HOST_DEVICE double future_prn(int64_t n, uint64_t seed);
 
 //==============================================================================
 //! Set a RNG seed to a unique value based on a unique particle ID by striding
@@ -47,7 +49,7 @@ double future_prn(int64_t n, uint64_t seed);
 //! @return The initialized seed value
 //==============================================================================
 
-uint64_t init_seed(int64_t id, int offset);
+OPENMC_HOST_DEVICE uint64_t init_seed(int64_t id, int offset);
 
 //==============================================================================
 //! Set the RNG seeds to unique values based on the ID of the particle. This
@@ -57,7 +59,7 @@ uint64_t init_seed(int64_t id, int offset);
 //! @param id The particle ID
 //==============================================================================
 
-void init_particle_seeds(int64_t id, uint64_t* seeds);
+OPENMC_HOST_DEVICE void init_particle_seeds(int64_t id, uint64_t* seeds);
 
 //==============================================================================
 //! Advance the random number seed 'n' times from the current seed. This
@@ -67,7 +69,7 @@ void init_particle_seeds(int64_t id, uint64_t* seeds);
 //! @param n The number of RNG seeds to skip ahead by
 //==============================================================================
 
-void advance_prn_seed(int64_t n, uint64_t* seed);
+OPENMC_HOST_DEVICE void advance_prn_seed(int64_t n, uint64_t* seed);
 
 //==============================================================================
 //! Advance a random number seed 'n' times.
@@ -79,7 +81,7 @@ void advance_prn_seed(int64_t n, uint64_t* seed);
 //! @param seed The starting to seed to advance from
 //==============================================================================
 
-uint64_t future_seed(uint64_t n, uint64_t seed);
+OPENMC_HOST_DEVICE uint64_t future_seed(uint64_t n, uint64_t seed);
 
 //==============================================================================
 //                               API FUNCTIONS

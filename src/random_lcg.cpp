@@ -1,5 +1,7 @@
 #include "openmc/random_lcg.h"
 
+#include "openmc/hip_utils.h"
+
 #include <cmath>
 
 namespace openmc {
@@ -29,7 +31,7 @@ uint64_t prn_stride {DEFAULT_STRIDE}; // stride between particles
 //    month = Sep,
 //    xurl = "https://www.cs.hmc.edu/tr/hmc-cs-2014-0905.pdf",
 //}
-double prn(uint64_t* seed)
+OPENMC_HOST_DEVICE double prn(uint64_t* seed)
 {
   // Advance the LCG
   *seed = (prn_mult * (*seed) + prn_add);
@@ -47,7 +49,7 @@ double prn(uint64_t* seed)
 // FUTURE_PRN
 //==============================================================================
 
-double future_prn(int64_t n, uint64_t seed)
+OPENMC_HOST_DEVICE double future_prn(int64_t n, uint64_t seed)
 {
   uint64_t fseed = future_seed(static_cast<uint64_t>(n), seed);
   return prn(&fseed);
@@ -57,7 +59,7 @@ double future_prn(int64_t n, uint64_t seed)
 // INIT_SEED
 //==============================================================================
 
-uint64_t init_seed(int64_t id, int offset)
+OPENMC_HOST_DEVICE uint64_t init_seed(int64_t id, int offset)
 {
   return future_seed(
     static_cast<uint64_t>(id) * prn_stride, master_seed + offset);
@@ -67,7 +69,7 @@ uint64_t init_seed(int64_t id, int offset)
 // INIT_PARTICLE_SEEDS
 //==============================================================================
 
-void init_particle_seeds(int64_t id, uint64_t* seeds)
+OPENMC_HOST_DEVICE void init_particle_seeds(int64_t id, uint64_t* seeds)
 {
   for (int i = 0; i < N_STREAMS; i++) {
     seeds[i] =
@@ -79,7 +81,7 @@ void init_particle_seeds(int64_t id, uint64_t* seeds)
 // ADVANCE_PRN_SEED
 //==============================================================================
 
-void advance_prn_seed(int64_t n, uint64_t* seed)
+OPENMC_HOST_DEVICE void advance_prn_seed(int64_t n, uint64_t* seed)
 {
   *seed = future_seed(static_cast<uint64_t>(n), *seed);
 }
@@ -88,7 +90,7 @@ void advance_prn_seed(int64_t n, uint64_t* seed)
 // FUTURE_SEED
 //==============================================================================
 
-uint64_t future_seed(uint64_t n, uint64_t seed)
+OPENMC_HOST_DEVICE uint64_t future_seed(uint64_t n, uint64_t seed)
 {
   // The algorithm here to determine the parameters used to skip ahead is
   // described in F. Brown, "Random Number Generation with Arbitrary Stride,"
