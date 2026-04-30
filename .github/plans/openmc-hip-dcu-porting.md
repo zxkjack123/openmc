@@ -176,7 +176,7 @@
   - ✅ `python3 -c "import openmc; m = openmc.Material(); m.add_nuclide('U235', 1.0); print(m)"` 无报错
 - **潜在风险**：Python 3.11 兼容性问题可能在某些测试中暴露；部分回归测试需要 `OPENMC_CROSS_SECTIONS`
 
-#### Task 1.3: 运行 CPU 基线 benchmark
+#### ✅ Task 1.3: 运行 CPU 基线 benchmark
 - **目标**：获取 CPU-only 性能数据作为后续 DCU 加速对比基线
 - **依赖**：T1.2
 - **修改内容**：

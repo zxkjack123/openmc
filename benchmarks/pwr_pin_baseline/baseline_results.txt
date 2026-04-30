@@ -1,0 +1,45 @@
+=== CPU Baseline Benchmark Results ===
+Platform: Hygon C86 (2x64 cores), 504GB RAM
+OpenMC: develop branch (commit 368ea06)
+OMP_NUM_THREADS=64, particles=50000, batches=50 (10 inactive)
+
+--- History-based mode ---
+ Total time for initialization     = 6.9156e-01 seconds
+   Reading cross sections          = 6.8316e-01 seconds
+ Total time in simulation          = 1.0786e+01 seconds
+   Time in inactive batches        = 2.1526e+00 seconds
+   Time in active batches          = 8.6329e+00 seconds
+ Total time elapsed                = 1.1501e+01 seconds
+ Calculation Rate (inactive)       = 232277 particles/second
+ Calculation Rate (active)         = 231671 particles/second
+ k-effective (Collision)     = 1.15979 +/- 0.00096
+ k-effective (Track-length)  = 1.15945 +/- 0.00102
+ k-effective (Absorption)    = 1.16075 +/- 0.00073
+ Combined k-effective        = 1.16036 +/- 0.00063
+
+--- Event-based mode ---
+ Total time for initialization     = 6.8505e-01 seconds
+ Total time in simulation          = 3.1882e+02 seconds
+     Particle initialization       = 2.0036e+00 seconds
+     Surface crossings             = 6.0402e+01 seconds
+     Collisions                    = 2.2033e+01 seconds
+     Particle death                = 1.5379e+00 seconds
+   Time in inactive batches        = 6.2714e+01 seconds
+   Time in active batches          = 2.5610e+02 seconds
+ Total time elapsed                = 3.1959e+02 seconds
+ Calculation Rate (inactive)       = 7972.76 particles/second
+ Calculation Rate (active)         = 7809.39 particles/second
+ k-effective (Collision)     = 1.15979 +/- 0.00096
+ k-effective (Track-length)  = 1.15945 +/- 0.00102
+ k-effective (Absorption)    = 1.16075 +/- 0.00073
+ Combined k-effective        = 1.16036 +/- 0.00063
+
+--- Analysis ---
+History-based: 11.5s total, 232k particles/s (primary benchmark)
+Event-based: 320s total, 7.8k particles/s (~30x slower with 64 threads)
+  - Event overhead dominates for small problems (50k particles)
+  - Surface crossings: 60.4s (19%), Collisions: 22.0s (7%)
+  - Remaining ~73% is calculate_xs (not separately reported in timer output)
+  - Event-based mode is the GPU porting target (natural SIMT mapping)
+k-eff agreement: Both modes produce identical k-eff = 1.16036 +/- 0.00063
+  (expected range for PWR pin cell: ~1.1-1.3) ✓
