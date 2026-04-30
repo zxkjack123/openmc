@@ -129,7 +129,7 @@
 
 ### Phase 1: CPU 基线构建与验证
 
-#### Task 1.1: Clone 并编译 OpenMC (CPU-only)
+#### ✅ Task 1.1: Clone 并编译 OpenMC (CPU-only)
 - **目标**：在远程 DCU 容器上完成 OpenMC C++ 库的 CPU-only 构建
 - **依赖**：T0.2 (HDF5), T0.4 (Python 版本)
 - **修改内容**：
