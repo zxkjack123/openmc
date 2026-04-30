@@ -267,7 +267,7 @@
   - ✅ HIP 构建中 `prn()` 被标注为 `__host__ __device__`
 - **潜在风险**：`prn()` 的实现依赖 `uint64_t` 运算，在 HIP device 上完全支持；但若 `prn()` 内部调用了其他非 device 函数则需逐级标注
 
-#### Task 2.3: 替换 vector.h / memory.h 为 HIP 感知版本
+#### ✅ Task 2.3: 替换 vector.h / memory.h 为 HIP 感知版本
 - **目标**：利用已有抽象层，在 `OPENMC_USE_HIP` 下提供 managed memory 分配的 vector 替代
 - **依赖**：T2.2
 - **修改内容**：

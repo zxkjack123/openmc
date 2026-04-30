@@ -29,6 +29,72 @@
     }                                                                          \
   } while (0)
 
+// RAII wrapper for device memory. Use in .hip files only.
+// Provides typed hipMalloc/hipFree with copy helpers.
+template<typename T>
+class DeviceBuffer {
+public:
+  DeviceBuffer() = default;
+
+  explicit DeviceBuffer(size_t count) : size_(count)
+  {
+    if (count > 0) {
+      HIP_CHECK(hipMalloc(&ptr_, count * sizeof(T)));
+    }
+  }
+
+  ~DeviceBuffer()
+  {
+    if (ptr_) {
+      hipFree(ptr_);
+    }
+  }
+
+  // Non-copyable
+  DeviceBuffer(const DeviceBuffer&) = delete;
+  DeviceBuffer& operator=(const DeviceBuffer&) = delete;
+
+  // Movable
+  DeviceBuffer(DeviceBuffer&& other) noexcept
+    : ptr_(other.ptr_), size_(other.size_)
+  {
+    other.ptr_ = nullptr;
+    other.size_ = 0;
+  }
+
+  DeviceBuffer& operator=(DeviceBuffer&& other) noexcept
+  {
+    if (this != &other) {
+      if (ptr_) hipFree(ptr_);
+      ptr_ = other.ptr_;
+      size_ = other.size_;
+      other.ptr_ = nullptr;
+      other.size_ = 0;
+    }
+    return *this;
+  }
+
+  void copy_from_host(const T* host_data, size_t count)
+  {
+    HIP_CHECK(hipMemcpy(ptr_, host_data, count * sizeof(T),
+      hipMemcpyHostToDevice));
+  }
+
+  void copy_to_host(T* host_data, size_t count) const
+  {
+    HIP_CHECK(hipMemcpy(host_data, ptr_, count * sizeof(T),
+      hipMemcpyDeviceToHost));
+  }
+
+  T* data() { return ptr_; }
+  const T* data() const { return ptr_; }
+  size_t size() const { return size_; }
+
+private:
+  T* ptr_ = nullptr;
+  size_t size_ = 0;
+};
+
 #else // OPENMC_USE_HIP but compiled by GCC (not hipcc)
 
 #define OPENMC_HOST_DEVICE

@@ -17,7 +17,18 @@
 #include <vector>
 
 namespace openmc {
+
+#ifdef OPENMC_USE_HIP
+// On DTK 25.04.1, rocthrust's host_vector includes <cuda/std/type_traits>
+// which is unavailable, preventing direct use of thrust::host_vector with GCC.
+// We keep std::vector for host-side containers. Device-side data management
+// uses explicit hipMalloc/hipMemcpy in .hip translation units (see hip_utils.h
+// for DeviceBuffer<T>).
 using std::vector;
-}
+#else
+using std::vector;
+#endif
+
+} // namespace openmc
 
 #endif // OPENMC_VECTOR_H

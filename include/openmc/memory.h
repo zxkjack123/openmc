@@ -12,8 +12,17 @@
 #include <memory>
 
 namespace openmc {
+
+#ifdef OPENMC_USE_HIP
+// HIP managed memory for unique_ptr is deferred to Phase 3. For now, keep
+// standard allocators; device data uses explicit hipMalloc in .hip files.
 using std::make_unique;
 using std::unique_ptr;
+#else
+using std::make_unique;
+using std::unique_ptr;
+#endif
+
 } // namespace openmc
 
 #endif // OPENMC_MEMORY_H
