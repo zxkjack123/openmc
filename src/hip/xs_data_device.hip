@@ -64,6 +64,9 @@ struct DeviceXSData {
 
   // Total bytes allocated on device
   size_t total_bytes = 0;
+
+  // Maximum number of nuclides in any material
+  int max_nucs_per_mat = 0;
 };
 
 // Global device data instance
@@ -235,6 +238,14 @@ void copy_xs_data_to_device()
   device_xs.d_mat_nuclide_offset = hip_alloc_copy(h_mat_nuclide_offset, bytes);
   device_xs.d_mat_nuclide_ids = hip_alloc_copy(h_mat_nuclide_ids, bytes);
   device_xs.d_mat_atom_density = hip_alloc_copy(h_mat_atom_density, bytes);
+
+  // Compute max nuclides per material
+  int max_nucs = 0;
+  for (int m = 0; m < n_mat; ++m) {
+    if (h_mat_n_nuclides[m] > max_nucs)
+      max_nucs = h_mat_n_nuclides[m];
+  }
+  device_xs.max_nucs_per_mat = max_nucs;
 
   device_xs.total_bytes = bytes;
 
@@ -533,6 +544,285 @@ void calculate_xs_on_device(int n_particles, const double* h_energy,
   hipFree(d_abs);
   hipFree(d_fis);
   hipFree(d_nufis);
+}
+
+//==============================================================================
+// Extended kernel: macro XS + per-nuclide micro XS + density_mult
+//==============================================================================
+
+__global__ void calculate_xs_kernel_full(int n_particles,
+  const double* __restrict__ d_energy, const double* __restrict__ d_sqrtkT,
+  const int* __restrict__ d_material, const int* __restrict__ d_i_log_union,
+  const double* __restrict__ d_density_mult,
+  double* __restrict__ d_macro_total, double* __restrict__ d_macro_absorption,
+  double* __restrict__ d_macro_fission,
+  double* __restrict__ d_macro_nu_fission,
+  int max_nucs,
+  double* __restrict__ d_micro_total, double* __restrict__ d_micro_abs,
+  double* __restrict__ d_micro_fis, double* __restrict__ d_micro_nufis,
+  double* __restrict__ d_micro_pprod, double* __restrict__ d_micro_interp,
+  int* __restrict__ d_micro_igrid, int* __restrict__ d_micro_itemp,
+  // XS data
+  const int* __restrict__ nuc_n_temps, const int* __restrict__ nuc_entry_start,
+  const int* __restrict__ nuc_fissionable, const double* __restrict__ nuc_kTs,
+  const int* __restrict__ nuc_kTs_offset,
+  const int64_t* __restrict__ entry_energy_offset,
+  const int* __restrict__ entry_energy_size,
+  const int64_t* __restrict__ entry_grid_index_offset,
+  const double* __restrict__ all_energy,
+  const int* __restrict__ all_grid_index, const double* __restrict__ all_xs,
+  const int64_t* __restrict__ entry_xs_offset,
+  // Material data
+  const int* __restrict__ mat_n_nuclides,
+  const int* __restrict__ mat_nuclide_offset,
+  const int* __restrict__ mat_nuclide_ids,
+  const double* __restrict__ mat_atom_density)
+{
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (tid >= n_particles)
+    return;
+
+  int mat_idx = d_material[tid];
+  if (mat_idx < 0) {
+    d_macro_total[tid] = 0.0;
+    d_macro_absorption[tid] = 0.0;
+    d_macro_fission[tid] = 0.0;
+    d_macro_nu_fission[tid] = 0.0;
+    return;
+  }
+
+  double E = d_energy[tid];
+  double sqrtkT = d_sqrtkT[tid];
+  double kT = sqrtkT * sqrtkT;
+  int i_log_union = d_i_log_union[tid];
+  double dens_mult = d_density_mult[tid];
+
+  double macro_total = 0.0;
+  double macro_absorption = 0.0;
+  double macro_fission = 0.0;
+  double macro_nu_fission = 0.0;
+
+  int n_nuc = mat_n_nuclides[mat_idx];
+  int nuc_offset = mat_nuclide_offset[mat_idx];
+  int micro_base = tid * max_nucs;
+
+  for (int j = 0; j < n_nuc; ++j) {
+    int i_nuclide = mat_nuclide_ids[nuc_offset + j];
+    double atom_dens = mat_atom_density[nuc_offset + j] * dens_mult;
+
+    // Temperature index (nearest method)
+    int nt = nuc_n_temps[i_nuclide];
+    int kts_off = nuc_kTs_offset[i_nuclide];
+    int i_temp = 0;
+    if (nt > 1) {
+      double max_diff = 1.0e30;
+      for (int t = 0; t < nt; ++t) {
+        double diff = fabs(nuc_kTs[kts_off + t] - kT);
+        if (diff < max_diff) {
+          i_temp = t;
+          max_diff = diff;
+        }
+      }
+    }
+
+    // Get entry index for (nuclide, i_temp)
+    int entry = nuc_entry_start[i_nuclide] + i_temp;
+
+    // Energy grid lookup
+    int64_t e_off = entry_energy_offset[entry];
+    int e_size = entry_energy_size[entry];
+    const double* e_grid = &all_energy[e_off];
+
+    int i_grid;
+    if (E < e_grid[0]) {
+      i_grid = 0;
+    } else if (E > e_grid[e_size - 1]) {
+      i_grid = e_size - 2;
+    } else {
+      // Log-grid acceleration
+      int64_t gi_off = entry_grid_index_offset[entry];
+      int i_low = all_grid_index[gi_off + i_log_union];
+      int i_high = all_grid_index[gi_off + i_log_union + 1] + 1;
+      if (i_low < 0)
+        i_low = 0;
+      if (i_high > e_size)
+        i_high = e_size;
+
+      // Binary search in reduced range
+      const double* sub = &e_grid[i_low];
+      int sub_n = i_high - i_low;
+      i_grid = i_low + device_lower_bound_index(sub, sub_n, E);
+    }
+
+    // Check for rare case where two energy points are the same
+    if (i_grid < e_size - 1 && e_grid[i_grid] == e_grid[i_grid + 1])
+      ++i_grid;
+
+    // Interpolation factor
+    double f = (E - e_grid[i_grid]) / (e_grid[i_grid + 1] - e_grid[i_grid]);
+
+    // XS interpolation (row-major: n_energy × 5)
+    int64_t xs_off = entry_xs_offset[entry];
+    const double* xs_lo = &all_xs[xs_off + i_grid * 5];
+    const double* xs_hi = &all_xs[xs_off + (i_grid + 1) * 5];
+
+    double micro_total = (1.0 - f) * xs_lo[0] + f * xs_hi[0];
+    double micro_absorption = (1.0 - f) * xs_lo[1] + f * xs_hi[1];
+    double micro_fission = 0.0;
+    double micro_nu_fission = 0.0;
+    double micro_pprod = (1.0 - f) * xs_lo[4] + f * xs_hi[4];
+
+    if (nuc_fissionable[i_nuclide]) {
+      micro_fission = (1.0 - f) * xs_lo[2] + f * xs_hi[2];
+      micro_nu_fission = (1.0 - f) * xs_lo[3] + f * xs_hi[3];
+    }
+
+    macro_total += atom_dens * micro_total;
+    macro_absorption += atom_dens * micro_absorption;
+    macro_fission += atom_dens * micro_fission;
+    macro_nu_fission += atom_dens * micro_nu_fission;
+
+    // Write per-nuclide micro XS output
+    int mi = micro_base + j;
+    d_micro_total[mi] = micro_total;
+    d_micro_abs[mi] = micro_absorption;
+    d_micro_fis[mi] = micro_fission;
+    d_micro_nufis[mi] = micro_nu_fission;
+    d_micro_pprod[mi] = micro_pprod;
+    d_micro_interp[mi] = f;
+    d_micro_igrid[mi] = i_grid;
+    d_micro_itemp[mi] = i_temp;
+  }
+
+  d_macro_total[tid] = macro_total;
+  d_macro_absorption[tid] = macro_absorption;
+  d_macro_fission[tid] = macro_fission;
+  d_macro_nu_fission[tid] = macro_nu_fission;
+}
+
+//==============================================================================
+// calculate_xs_full_on_device (host-callable wrapper with micro XS output)
+//==============================================================================
+
+void calculate_xs_full_on_device(int n_particles, int max_nucs,
+  const double* h_energy, const double* h_sqrtkT, const int* h_material,
+  const int* h_i_log_union, const double* h_density_mult,
+  double* h_macro_total, double* h_macro_absorption, double* h_macro_fission,
+  double* h_macro_nu_fission, double* h_micro_total, double* h_micro_abs,
+  double* h_micro_fis, double* h_micro_nufis, double* h_micro_pprod,
+  double* h_micro_interp, int* h_micro_igrid, int* h_micro_itemp)
+{
+  if (n_particles == 0)
+    return;
+
+  size_t n_d = n_particles * sizeof(double);
+  size_t n_i = n_particles * sizeof(int);
+  size_t micro_d = static_cast<size_t>(n_particles) * max_nucs * sizeof(double);
+  size_t micro_i = static_cast<size_t>(n_particles) * max_nucs * sizeof(int);
+
+  // Allocate device arrays — inputs
+  double *d_energy, *d_sqrtkT, *d_density_mult;
+  int *d_material, *d_i_log_union;
+  hipMalloc(&d_energy, n_d);
+  hipMalloc(&d_sqrtkT, n_d);
+  hipMalloc(&d_density_mult, n_d);
+  hipMalloc(&d_material, n_i);
+  hipMalloc(&d_i_log_union, n_i);
+
+  // Allocate device arrays — macro output
+  double *d_total, *d_abs, *d_fis, *d_nufis;
+  hipMalloc(&d_total, n_d);
+  hipMalloc(&d_abs, n_d);
+  hipMalloc(&d_fis, n_d);
+  hipMalloc(&d_nufis, n_d);
+
+  // Allocate device arrays — micro output
+  double *d_mt, *d_ma, *d_mf, *d_mnf, *d_mpp, *d_mi;
+  int *d_mig, *d_mit;
+  hipMalloc(&d_mt, micro_d);
+  hipMalloc(&d_ma, micro_d);
+  hipMalloc(&d_mf, micro_d);
+  hipMalloc(&d_mnf, micro_d);
+  hipMalloc(&d_mpp, micro_d);
+  hipMalloc(&d_mi, micro_d);
+  hipMalloc(&d_mig, micro_i);
+  hipMalloc(&d_mit, micro_i);
+
+  // Copy inputs to device
+  hipMemcpy(d_energy, h_energy, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(d_sqrtkT, h_sqrtkT, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(d_density_mult, h_density_mult, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(d_material, h_material, n_i, hipMemcpyHostToDevice);
+  hipMemcpy(d_i_log_union, h_i_log_union, n_i, hipMemcpyHostToDevice);
+
+  // Launch kernel
+  const int block_size = 256;
+  int grid_size = (n_particles + block_size - 1) / block_size;
+
+  calculate_xs_kernel_full<<<grid_size, block_size>>>(n_particles, d_energy,
+    d_sqrtkT, d_material, d_i_log_union, d_density_mult, d_total, d_abs,
+    d_fis, d_nufis, max_nucs, d_mt, d_ma, d_mf, d_mnf, d_mpp, d_mi, d_mig,
+    d_mit,
+    // XS data
+    device_xs.d_n_temps, device_xs.d_entry_start, device_xs.d_fissionable,
+    device_xs.d_kTs, device_xs.d_kTs_offset, device_xs.d_energy_offset,
+    device_xs.d_energy_size, device_xs.d_grid_index_offset, device_xs.d_energy,
+    device_xs.d_grid_index, device_xs.d_xs, device_xs.d_xs_offset,
+    // Material data
+    device_xs.d_mat_n_nuclides, device_xs.d_mat_nuclide_offset,
+    device_xs.d_mat_nuclide_ids, device_xs.d_mat_atom_density);
+
+  hipError_t err = hipGetLastError();
+  if (err != hipSuccess) {
+    openmc::fatal_error(
+      fmt::format("HIP full kernel launch failed: {}", hipGetErrorString(err)));
+  }
+
+  hipDeviceSynchronize();
+
+  // Copy results back — macro
+  hipMemcpy(h_macro_total, d_total, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_macro_absorption, d_abs, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_macro_fission, d_fis, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_macro_nu_fission, d_nufis, n_d, hipMemcpyDeviceToHost);
+
+  // Copy results back — micro
+  hipMemcpy(h_micro_total, d_mt, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_abs, d_ma, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_fis, d_mf, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_nufis, d_mnf, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_pprod, d_mpp, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_interp, d_mi, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_igrid, d_mig, micro_i, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_itemp, d_mit, micro_i, hipMemcpyDeviceToHost);
+
+  // Free device arrays
+  hipFree(d_energy);
+  hipFree(d_sqrtkT);
+  hipFree(d_density_mult);
+  hipFree(d_material);
+  hipFree(d_i_log_union);
+  hipFree(d_total);
+  hipFree(d_abs);
+  hipFree(d_fis);
+  hipFree(d_nufis);
+  hipFree(d_mt);
+  hipFree(d_ma);
+  hipFree(d_mf);
+  hipFree(d_mnf);
+  hipFree(d_mpp);
+  hipFree(d_mi);
+  hipFree(d_mig);
+  hipFree(d_mit);
+}
+
+//==============================================================================
+// get_max_nuclides_per_material
+//==============================================================================
+
+int get_max_nuclides_per_material()
+{
+  return device_xs.max_nucs_per_mat;
 }
 
 } // namespace hip

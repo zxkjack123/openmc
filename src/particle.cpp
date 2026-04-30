@@ -165,7 +165,7 @@ void Particle::from_source(const SourceSite* src)
   }
 }
 
-void Particle::event_calculate_xs()
+void Particle::event_xs_preamble()
 {
   // Set the random number stream
   stream() = STREAM_TRACKING;
@@ -210,6 +210,20 @@ void Particle::event_calculate_xs()
   if (settings::check_overlaps)
     check_cell_overlap(*this);
 
+  // Handle void material
+  if (material() == MATERIAL_VOID) {
+    macro_xs().total = 0.0;
+    macro_xs().absorption = 0.0;
+    macro_xs().fission = 0.0;
+    macro_xs().nu_fission = 0.0;
+  }
+}
+
+void Particle::event_calculate_xs()
+{
+  // Run the preamble (state storage, cell search, track writing)
+  event_xs_preamble();
+
   // Calculate microscopic and macroscopic cross sections
   if (material() != MATERIAL_VOID) {
     if (settings::run_CE) {
@@ -229,12 +243,8 @@ void Particle::event_calculate_xs()
       // Update the particle's group while we know we are multi-group
       g_last() = g();
     }
-  } else {
-    macro_xs().total = 0.0;
-    macro_xs().absorption = 0.0;
-    macro_xs().fission = 0.0;
-    macro_xs().nu_fission = 0.0;
   }
+  // Void case already handled by event_xs_preamble()
 }
 
 void Particle::event_advance()

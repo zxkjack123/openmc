@@ -51,6 +51,44 @@ void calculate_xs_on_device(int n_particles, const double* h_energy,
   double* h_macro_total, double* h_macro_absorption, double* h_macro_fission,
   double* h_macro_nu_fission);
 
+//! \brief Extended host-callable wrapper: computes both macroscopic AND
+//! per-nuclide microscopic cross sections on device.
+//!
+//! Output micro XS arrays are indexed as [particle * max_nucs + nuclide_j].
+//! For each particle, nuclide_j corresponds to the j-th nuclide in its
+//! material (same order as Material::nuclide_).
+//!
+//! \param n_particles        Number of particles
+//! \param max_nucs           Max nuclides per material (stride for micro arrays)
+//! \param h_energy           [in]  Particle energies
+//! \param h_sqrtkT           [in]  sqrt(kT) values
+//! \param h_material         [in]  Material indices (-1 = void)
+//! \param h_i_log_union      [in]  Log-union grid indices
+//! \param h_density_mult     [in]  Per-particle density multiplier
+//! \param h_macro_total      [out] Macroscopic total XS
+//! \param h_macro_absorption [out] Macroscopic absorption XS
+//! \param h_macro_fission    [out] Macroscopic fission XS
+//! \param h_macro_nu_fission [out] Macroscopic nu-fission XS
+//! \param h_micro_total      [out] Per-nuclide total [n * max_nucs]
+//! \param h_micro_abs        [out] Per-nuclide absorption [n * max_nucs]
+//! \param h_micro_fis        [out] Per-nuclide fission [n * max_nucs]
+//! \param h_micro_nufis      [out] Per-nuclide nu-fission [n * max_nucs]
+//! \param h_micro_pprod      [out] Per-nuclide photon production [n * max_nucs]
+//! \param h_micro_interp     [out] Per-nuclide interpolation factor [n * max_nucs]
+//! \param h_micro_igrid      [out] Per-nuclide grid index [n * max_nucs]
+//! \param h_micro_itemp      [out] Per-nuclide temperature index [n * max_nucs]
+void calculate_xs_full_on_device(int n_particles, int max_nucs,
+  const double* h_energy, const double* h_sqrtkT, const int* h_material,
+  const int* h_i_log_union, const double* h_density_mult,
+  double* h_macro_total, double* h_macro_absorption, double* h_macro_fission,
+  double* h_macro_nu_fission, double* h_micro_total, double* h_micro_abs,
+  double* h_micro_fis, double* h_micro_nufis, double* h_micro_pprod,
+  double* h_micro_interp, int* h_micro_igrid, int* h_micro_itemp);
+
+//! \brief Return the maximum number of nuclides in any material.
+//! Computed during copy_xs_data_to_device().
+int get_max_nuclides_per_material();
+
 } // namespace hip
 } // namespace openmc
 

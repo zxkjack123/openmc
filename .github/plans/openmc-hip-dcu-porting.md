@@ -340,7 +340,7 @@
   - ✅ 无 device 端越界访问（`hip-memcheck` 检查通过）
 - **潜在风险**：S(a,b) 表处理暂时跳过，含热中子散射体的材料会走 CPU fallback；二分查找在 GPU warp 内会有分支发散，但各粒子的查找是独立的
 
-#### Task 3.3: 替换 event.cpp 中的 XS 事件循环
+#### ✅ Task 3.3: 替换 event.cpp 中的 XS 事件循环
 - **目标**：将 `process_calculate_xs_events` 的 OpenMP 并行循环替换为 HIP kernel launch
 - **依赖**：T3.2
 - **修改内容**：
