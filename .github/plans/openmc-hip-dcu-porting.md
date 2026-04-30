@@ -198,7 +198,7 @@
 
 ### Phase 2: HIP 构建基础设施
 
-#### Task 2.1: 添加 CMake HIP 构建选项
+#### ✅ Task 2.1: 添加 CMake HIP 构建选项
 - **目标**：在 CMakeLists.txt 中添加 `OPENMC_USE_HIP` 选项和对应的编译器/链接器配置
 - **依赖**：T1.1
 - **修改内容**：

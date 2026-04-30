@@ -44,6 +44,7 @@ option(OPENMC_USE_MPI         "Enable MPI"                                      
 option(OPENMC_USE_UWUW        "Enable UWUW"                                          OFF)
 option(OPENMC_FORCE_VENDORED_LIBS "Explicitly use submodules defined in 'vendor'"    OFF)
 option(OPENMC_ENABLE_STRICT_FP "Enable strict FP flags to improve test portability"  OFF)
+option(OPENMC_USE_HIP         "Enable HIP acceleration for DCU/AMD GPU"              OFF)
 
 message(STATUS "OPENMC_USE_OPENMP ${OPENMC_USE_OPENMP}")
 message(STATUS "OPENMC_BUILD_TESTS ${OPENMC_BUILD_TESTS}")
@@ -55,6 +56,7 @@ message(STATUS "OPENMC_USE_MPI ${OPENMC_USE_MPI}")
 message(STATUS "OPENMC_USE_UWUW ${OPENMC_USE_UWUW}")
 message(STATUS "OPENMC_FORCE_VENDORED_LIBS ${OPENMC_FORCE_VENDORED_LIBS}")
 message(STATUS "OPENMC_ENABLE_STRICT_FP ${OPENMC_ENABLE_STRICT_FP}")
+message(STATUS "OPENMC_USE_HIP ${OPENMC_USE_HIP}")
 
 # Warnings for deprecated options
 foreach(OLD_OPT IN ITEMS "openmp" "profile" "coverage" "dagmc" "libmesh")
@@ -115,6 +117,26 @@ endif()
 
 if(OPENMC_USE_OPENMP)
   find_package(OpenMP REQUIRED)
+endif()
+
+#===============================================================================
+# HIP for DCU/AMD GPU acceleration
+#===============================================================================
+
+if(OPENMC_USE_HIP)
+  # Append DTK/ROCm paths for find_package discovery
+  if(DEFINED ENV{ROCM_PATH})
+    list(APPEND CMAKE_PREFIX_PATH $ENV{ROCM_PATH})
+  elseif(DEFINED ENV{HIP_PATH})
+    list(APPEND CMAKE_PREFIX_PATH $ENV{HIP_PATH}/..)
+  elseif(EXISTS /opt/dtk)
+    list(APPEND CMAKE_PREFIX_PATH /opt/dtk)
+  endif()
+
+  enable_language(HIP)
+  find_package(hip REQUIRED)
+  message(STATUS "Found HIP: ${hip_DIR} (version ${hip_VERSION})")
+  message(STATUS "HIP compiler: ${CMAKE_HIP_COMPILER}")
 endif()
 
 #===============================================================================
@@ -557,6 +579,11 @@ endif()
 
 if (OPENMC_USE_OPENMP)
   target_link_libraries(libopenmc OpenMP::OpenMP_CXX)
+endif()
+
+if (OPENMC_USE_HIP)
+  target_compile_definitions(libopenmc PUBLIC OPENMC_USE_HIP)
+  target_link_libraries(libopenmc hip::device)
 endif()
 
 if (OPENMC_USE_MPI)
