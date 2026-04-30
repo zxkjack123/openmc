@@ -110,13 +110,14 @@
   - ✅ 至少包含 `U235.h5`、`H1.h5` 的路径引用
 - **潜在风险**：下载 ~800MB，网络已确认可达 GitHub/PyPI；若 anl.box.com 不通则用备用镜像
 
-#### Task 0.4: 确认 Python 版本兼容性
+#### ✅ Task 0.4: 确认 Python 版本兼容性
 - **目标**：解决 Python 3.11 (容器) vs >=3.12 (OpenMC develop) 的版本冲突
 - **依赖**：无
 - **修改内容**：
   - 方案 A（推荐）：checkout OpenMC 的较早兼容版本（如 v0.14.0 tag，支持 Python 3.11）
   - 方案 B：修改 `pyproject.toml` 的 `requires-python` 为 `">=3.11"`（仅本地 fork）
   - 方案 C：在容器中用 `pyenv` 或 `deadsnakes` PPA 安装 Python 3.12
+- **实际执行**：选择方案 B。确认 `requires-python` 从 `>=3.11` 改为 `>=3.12` 的变更仅为 CI 矩阵更新（commit 1d9a8f542），无 Python 3.12 专用语法（type statement / @override）。将在 T1.1 clone 后修改 pyproject.toml 即可。
 - **修改边界**：不修改 upstream 代码（如用方案 B 仅修改本地 fork 的 1 行）
 - **测试要求**：
   - 运行 `python3 --version` 确认版本
