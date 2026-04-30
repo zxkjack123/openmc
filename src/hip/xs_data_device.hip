@@ -109,6 +109,16 @@ static T* hip_alloc_copy(const std::vector<T>& v, size_t& bytes)
 
 void copy_xs_data_to_device()
 {
+  // Select GPU device based on MPI rank (for multi-GPU runs)
+  int device_count = 0;
+  hipGetDeviceCount(&device_count);
+  if (device_count > 0) {
+    int device_id = mpi::rank % device_count;
+    hipSetDevice(device_id);
+    fmt::print(" MPI rank {} using HIP device {}/{}\n", mpi::rank, device_id,
+      device_count);
+  }
+
   const auto& nuclides = data::nuclides;
   int n_nuc = static_cast<int>(nuclides.size());
   if (n_nuc == 0)
