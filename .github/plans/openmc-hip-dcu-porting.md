@@ -318,7 +318,7 @@
   - ✅ device 内存占用合理（PWR pin cell ~几十 MB）
 - **潜在风险**：核素截面数据结构包含嵌套 vector（多温度多能量组），扁平化需要仔细处理索引映射；gfx936 64GB VRAM 足够容纳全套 NNDC 数据
 
-#### Task 3.2: 实现截面查找 HIP kernel
+#### ✅ Task 3.2: 实现截面查找 HIP kernel
 - **目标**：将 `Material::calculate_neutron_xs` 的内层循环实现为 HIP kernel
 - **依赖**：T3.1
 - **修改内容**：
