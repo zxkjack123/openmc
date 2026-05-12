@@ -242,7 +242,7 @@
 - **难度**：Medium
 - **目标 PR**：#3757（作为 review comment 附带），或独立 PR 到 GuySten/openmc
 
-#### Task 1.2: Create multi-detector regression test
+#### ✅ Task 1.2: Create multi-detector regression test
 - **目标**：测试多个 point detector 位置的正确性（多 bin PointFilter）
 - **修改内容**：
   - 文件 `tests/regression_tests/point_detector_multi/__init__.py`：空文件
