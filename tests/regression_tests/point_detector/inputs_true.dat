@@ -1,0 +1,41 @@
+<?xml version='1.0' encoding='utf-8'?>
+<model>
+  <materials>
+    <material id="1" name="water">
+      <density value="1.0" units="g/cm3"/>
+      <nuclide name="H1" ao="2.0"/>
+      <nuclide name="O16" ao="1.0"/>
+    </material>
+  </materials>
+  <geometry>
+    <cell id="1" material="1" region="-1" universe="1"/>
+    <cell id="2" material="void" region="1 -2" universe="1"/>
+    <surface id="1" type="sphere" coeffs="0.0 0.0 0.0 5.0"/>
+    <surface id="2" type="sphere" boundary="vacuum" coeffs="0.0 0.0 0.0 30.0"/>
+  </geometry>
+  <settings>
+    <run_mode>fixed source</run_mode>
+    <particles>1000</particles>
+    <batches>10</batches>
+    <source type="independent" strength="1.0" particle="neutron">
+      <space type="point">
+        <parameters>0.0 0.0 0.0</parameters>
+      </space>
+      <energy type="discrete">
+        <parameters>1000000.0 1.0</parameters>
+      </energy>
+    </source>
+  </settings>
+  <tallies>
+    <filter id="1" type="point">
+      <bins>0.0 0.0 20.0 1.0 20.0 0.0 0.0 1.0</bins>
+    </filter>
+    <filter id="2" type="energy">
+      <bins>0.0 100000.0 20000000.0</bins>
+    </filter>
+    <tally id="1" name="point_det_flux">
+      <filters>1 2</filters>
+      <scores>flux</scores>
+    </tally>
+  </tallies>
+</model>
