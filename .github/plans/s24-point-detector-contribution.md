@@ -576,7 +576,7 @@
 
 ### Phase 5: Community Engagement
 
-#### Task 5.1: Post regression test contribution on PR #3757
+#### ✅ Task 5.1: Post regression test contribution on PR #3757
 - **目标**：在 #3757 上 comment，提供回归测试代码，请求 review
 - **修改内容**：
   - 写一个 GitHub PR comment，包含：
