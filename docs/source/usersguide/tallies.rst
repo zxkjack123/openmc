@@ -67,6 +67,67 @@ instance through the :attr:`Tally.filters` attribute::
           tally. This can be useful if you want to know, for example, a reaction
           rate over your entire model.
 
+.. _usersguide_point_detectors:
+
+-------------------------------------------
+Point Detectors (Next-Event Estimator)
+-------------------------------------------
+
+A :class:`openmc.PointFilter` enables point detector tallies using the
+next-event estimator (NEE). At each collision event, the NEE analytically
+computes the probability that a particle scatters directly toward a given
+detector position, ray-traces through the geometry to determine the total
+attenuation, and scores the expected uncollided contribution:
+
+.. math::
+
+   \hat{\phi} = \sum_{i} \frac{w_i \, p(\Omega_i) \, e^{-\tau_i}}{4\pi r_i^2}
+
+where :math:`w_i` is the particle weight, :math:`p(\Omega_i)` is the scattering
+PDF evaluated at the direction toward the detector, :math:`\tau_i` is the
+optical thickness (number of mean free paths) between the collision site and
+detector, and :math:`r_i` is the distance to the detector. Each detector has an
+exclusion sphere of radius :math:`R_0` to avoid the :math:`1/r^2` singularity
+near the detector.
+
+**Creating a point detector tally:**
+
+.. code-block:: python
+
+   import openmc
+
+   # Define point detectors: list of ((x, y, z), exclusion_radius) tuples
+   point_filter = openmc.PointFilter([
+       ((0.0, 0.0, 100.0), 1.0),   # detector at z=100 cm, R0=1 cm
+       ((50.0, 0.0, 0.0), 2.0),    # detector at x=50 cm, R0=2 cm
+   ])
+
+   tally = openmc.Tally()
+   tally.filters = [point_filter]
+   tally.scores = ['flux']
+
+The :class:`~openmc.PointFilter` can be combined with other filters (e.g.,
+:class:`~openmc.EnergyFilter`) to obtain energy-resolved point detector
+estimates::
+
+   energy_filter = openmc.EnergyFilter([0.0, 1e5, 1e6, 20e6])
+   tally.filters = [point_filter, energy_filter]
+
+**Limitations and requirements:**
+
+- All external boundary conditions must be **vacuum**. Reflective or periodic
+  boundaries will cause a runtime error. This is because the NEE ray-trace
+  assumes particles do not reflect at boundaries.
+- Only the ``flux`` score is supported with point detectors.
+- Point detector positions must be **inside the geometry model domain** (i.e.,
+  within a cell, including void cells). Detectors placed outside the outermost
+  boundary surface will receive zero contributions because the ray-trace
+  terminates at the boundary.
+- Multi-group mode is not supported; a runtime error will be raised.
+- NCrystal materials are not supported with point detectors.
+- Point detectors add computational cost proportional to the number of
+  detectors, since each collision event requires a ray-trace to each detector.
+
 .. _usersguide_scores:
 
 ------

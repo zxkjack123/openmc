@@ -528,7 +528,7 @@
 
 ### Phase 4: Documentation
 
-#### Task 4.1: Write user guide section for point detector
+#### ✅ Task 4.1: Write user guide section for point detector
 - **目标**：在 OpenMC Sphinx 文档中添加 Point Detector / NEE 用户指南
 - **修改内容**：
   - 文件 `docs/source/usersguide/tallies.rst`：在 Filters 段落末尾添加 `PointFilter` 的使用说明
