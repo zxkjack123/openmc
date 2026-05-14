@@ -452,7 +452,7 @@
 
 ### Phase 3: BEST Benchmark
 
-#### Task 3.1: Design BEST point detector benchmark
+#### 🛑 Task 3.1: Design BEST point detector benchmark [BLOCKED: BEST model has reflective BCs — incompatible with point detectors]
 - **目标**：设计在 BEST 融合包层模型上的 point detector 基准测试方案
 - **修改内容**：
   - 文件 `$GVR_WORKSPACE/scripts/benchmark_point_detector_best.py`：
@@ -476,7 +476,7 @@
 - **目标 PR**：无直接 PR，但为 #3757 提供 benchmark evidence
 - **依赖**：Phase 0 完成
 
-#### Task 3.2: Run BEST benchmark
+#### ⏸ Task 3.2: Run BEST benchmark [SKIPPED: dependency Task 3.1 blocked]
 - **目标**：在本地 36 核机器上运行 BEST point detector 基准
 - **修改内容**：
   - 运行 Task 3.1 生成的两组模型
@@ -504,7 +504,7 @@
 - **目标 PR**：为 #3757 提供 benchmark evidence
 - **依赖**：Phase 0, Task 3.1
 
-#### Task 3.3: Analyze BEST benchmark results
+#### ⏸ Task 3.3: Analyze BEST benchmark results [SKIPPED: dependency Task 3.2 skipped]
 - **目标**：分析 point detector vs analog 的统计效率对比
 - **修改内容**：
   - 分析脚本 `$GVR_WORKSPACE/scripts/analyze_pd_benchmark.py`：
