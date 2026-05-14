@@ -608,6 +608,12 @@ class ParticleFilter(Filter):
         return [ParticleType(i) for i in particle_i]
 
 class PointFilter(Filter):
+    """C API bindings for a point-detector filter.
+
+    Each bin corresponds to a detector defined by a position and an
+    exclusion-sphere radius for use with the next-event estimator (NEE).
+
+    """
     filter_type = 'point'
 
 class ParticleProductionFilter(Filter):

@@ -794,23 +794,57 @@ class ParticleFilter(Filter):
 
 
 class PointFilter(Filter):
-    """Bins tally events based on point detectors.
+    """Bins tally events based on point detectors using the next-event estimator.
+
+    Each bin corresponds to a detector defined by a position in Cartesian
+    coordinates and an exclusion-sphere radius *R0*.  At every collision site
+    the next-event estimator (NEE) analytically computes the uncollided flux
+    contribution to each detector:
+
+    .. math::
+
+        \\hat{\\phi} = \\sum_i \\frac{w_i \\, p(\\Omega_i) \\,
+        e^{-\\tau_i}}{4\\pi r_i^2}
+
+    where *w* is the particle weight, *p* is the scattering PDF toward the
+    detector, *τ* is the optical thickness between collision and detector, and
+    *r* is the distance.  The exclusion sphere of radius *R0* prevents the
+    1/r² singularity when particles collide very close to the detector.
 
     Parameters
     ----------
-    bins : sequence of tuple[tuple[Real, Real, Real], Real]
-        Point detectors positions and exclusion radii.
+    bins : sequence of tuple[tuple[float, float, float], float]
+        Each element is ``((x, y, z), R0)`` where ``(x, y, z)`` is the
+        detector position in cm and ``R0`` is the exclusion-sphere radius
+        in cm.  Particles that collide inside the exclusion sphere do not
+        contribute to the NEE score for that detector.
     filter_id : int
         Unique identifier for the filter
 
     Attributes
     ----------
-    bins : sequence of tuple[tuple[Real, Real, Real], Real]
-        Point detectors positions and exclusion radii.
+    bins : sequence of tuple[tuple[float, float, float], float]
+        Detector positions and exclusion-sphere radii.
     id : int
         Unique identifier for the filter
-    num_bins : Integral
-        The number of filter bins
+    num_bins : int
+        The number of filter bins (i.e., number of detectors)
+
+    Examples
+    --------
+    Create a tally with two point detectors:
+
+    >>> pf = openmc.PointFilter([
+    ...     ((0.0, 0.0, 100.0), 1.0),
+    ...     ((50.0, 0.0, 0.0), 2.0),
+    ... ])
+    >>> tally = openmc.Tally()
+    >>> tally.filters = [pf]
+    >>> tally.scores = ['flux']
+
+    See Also
+    --------
+    openmc.Tally
 
     """
     
@@ -826,6 +860,15 @@ class PointFilter(Filter):
 
     @Filter.bins.setter
     def bins(self, bins):
+        """Set detector bins.
+
+        Parameters
+        ----------
+        bins : sequence of tuple[tuple[float, float, float], float]
+            Each element is ``((x, y, z), R0)`` — a detector position in cm
+            and its exclusion-sphere radius in cm.
+
+        """
         cv.check_type('bins', bins, Sequence, tuple)
         for i, item in enumerate(bins):
             cv.check_type(f'bins[{i}]', item, tuple)
@@ -837,6 +880,19 @@ class PointFilter(Filter):
 
     @classmethod
     def from_hdf5(cls, group, **kwargs):
+        """Construct a new PointFilter instance from HDF5 data.
+
+        Parameters
+        ----------
+        group : h5py.Group
+            HDF5 group to read from
+
+        Returns
+        -------
+        PointFilter
+            Point filter reconstructed from the HDF5 data
+
+        """
         filter_id = int(group.name.split('/')[-1].lstrip('filter '))
         flat = group['bins'][()]
         # Reconstruct tuple structure: every 4 values = (x, y, z, r0)
@@ -850,6 +906,23 @@ class PointFilter(Filter):
         return out
 
     def get_pandas_dataframe(self, data_size, stride, **kwargs):
+        """Return a pandas DataFrame for the filter variable.
+
+        Parameters
+        ----------
+        data_size : int
+            Total number of tally data entries
+        stride : int
+            Stride in tally data array between successive filter bins
+
+        Returns
+        -------
+        pandas.DataFrame
+            DataFrame with one column labelled ``'point'`` whose values are
+            string representations of each detector, e.g.
+            ``"(0.0, 0.0, 100.0) R0=1.0"``.
+
+        """
         import pandas as pd
         labels = [f"({p[0]}, {p[1]}, {p[2]}) R0={r}" for (p, r) in self.bins]
         filter_bins = np.repeat(labels, stride)
@@ -877,6 +950,19 @@ class PointFilter(Filter):
 
     @classmethod
     def from_xml_element(cls, elem, **kwargs):
+        """Construct a new PointFilter instance from an XML element.
+
+        Parameters
+        ----------
+        elem : lxml.etree._Element
+            XML ``<filter>`` element
+
+        Returns
+        -------
+        PointFilter
+            Point filter reconstructed from the XML data
+
+        """
         filter_id = int(get_text(elem, "id"))
         flat = [float(x) for x in get_text(elem, "bins").split()]
         bins = []

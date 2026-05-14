@@ -552,7 +552,7 @@
 - **目标 PR**：#3757
 - **依赖**：Phase 0
 
-#### Task 4.2: Improve PointFilter Python API docstrings
+#### ✅ Task 4.2: Improve PointFilter Python API docstrings
 - **目标**：补全 `PointFilter` 类的 numpydoc 格式 docstrings
 - **修改内容**：
   - 文件 `openmc/filter.py`：在 `PointFilter` 类中补全 docstrings
