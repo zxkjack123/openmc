@@ -384,7 +384,7 @@
 
 ### Phase 2: Bug Investigation
 
-#### Task 2.1: Reproduce the crash with ASAN/valgrind
+#### ✅ Task 2.1: Reproduce the crash with ASAN/valgrind
 - **目标**：在本地复现 shimwell 报告的 `free(): corrupted unsorted chunks` crash 并定位根因
 - **修改内容**：
   - 使用 AddressSanitizer 重新构建 OpenMC
