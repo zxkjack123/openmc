@@ -595,7 +595,7 @@
 - **目标 PR**：#3757
 - **依赖**：Phase 1
 
-#### Task 5.2: Share BEST benchmark results
+#### ⏸ Task 5.2: Share BEST benchmark results
 - **目标**：在 #3757 或 #3109 上分享 BEST 模型基准结果，展示 point detector 在大型工程问题上的价值
 - **修改内容**：
   - 写一个 GitHub comment，包含：
@@ -613,7 +613,7 @@
 - **目标 PR**：#3757 或 #3109
 - **依赖**：Phase 3
 
-#### Task 5.3: Contact paulromano about review priority
+#### ✅ Task 5.3: Contact paulromano about review priority
 - **目标**：礼貌地请求 paulromano 审查 #3757 的优先级提升
 - **修改内容**：
   - 方案一：在 #3757 上 @paulromano 留 comment，提供上下文：

@@ -61,3 +61,7 @@ tests/unit_tests/test_filter_point.py — 7 passed
 tests/regression_tests/point_detector/ — passed
 tests/regression_tests/point_detector_multi/ — passed
 ```
+
+---
+
+@paulromano — If you have a moment, I'd appreciate your perspective on the remaining architectural considerations for this PR (e.g., the estimator-vs-tally-type discussion from #3109). The PR chain is progressing well (3/6 merged: #3550, #3816, #3845), and with regression tests, unit tests, and user docs now available, I believe this is approaching merge-readiness. Happy to address any concerns.
