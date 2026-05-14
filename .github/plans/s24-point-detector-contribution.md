@@ -45,14 +45,14 @@
 
 ## Error & Rescue Map（关键失败路径映射）
 
-| 代码路径/操作 | 可能的失败 | 错误类型 | 已处理？ | 处理方式 | 用户可见行为 |
-|---|---|---|---|---|---|
-| `git fetch GuySten && git checkout point-detector` | 远程分支不存在或冲突 | git error | Y | 从 #3757 PR ref 获取: `git fetch upstream pull/3757/head:point-detector` | 明确错误提示 |
-| CMake 构建 point-detector 分支 | 编译失败（新文件缺少依赖） | build error | Y | 检查 CMakeLists.txt 是否包含 `filter_point.cpp`，手动添加 | 编译错误信息 |
-| `ParticleRay` diamond inheritance | `free(): corrupted unsorted chunks` | runtime crash | N → Phase 2 目标 | 需要 valgrind/ASAN 分析 | **CRITICAL GAP** — 程序 abort |
-| Point detector 在 void region 射线追踪 | 射线未到达检测器（traversal_distance < total_distance） | silent skip | Y | `score_point_tally_impl` 中 `if (distance < total_distance) continue` 逻辑 | 零计数（不一定是 bug） |
-| BEST 模型 4136 源 + point detector | 内存爆炸或性能塌陷 | OOM/performance | N | 限制检测器数量，先用 1-2 个检测器验证 | 内存不足或超长运行时间 |
-| `PointFilter.from_xml_element` 未实现 | Python API 反序列化失败 | NotImplementedError | N | Phase 4 补全 | Python 报错 |
+| 代码路径/操作                                      | 可能的失败                                              | 错误类型            | 已处理？         | 处理方式                                                                   | 用户可见行为                  |
+| -------------------------------------------------- | ------------------------------------------------------- | ------------------- | ---------------- | -------------------------------------------------------------------------- | ----------------------------- |
+| `git fetch GuySten && git checkout point-detector` | 远程分支不存在或冲突                                    | git error           | Y                | 从 #3757 PR ref 获取: `git fetch upstream pull/3757/head:point-detector`   | 明确错误提示                  |
+| CMake 构建 point-detector 分支                     | 编译失败（新文件缺少依赖）                              | build error         | Y                | 检查 CMakeLists.txt 是否包含 `filter_point.cpp`，手动添加                  | 编译错误信息                  |
+| `ParticleRay` diamond inheritance                  | `free(): corrupted unsorted chunks`                     | runtime crash       | N → Phase 2 目标 | 需要 valgrind/ASAN 分析                                                    | **CRITICAL GAP** — 程序 abort |
+| Point detector 在 void region 射线追踪             | 射线未到达检测器（traversal_distance < total_distance） | silent skip         | Y                | `score_point_tally_impl` 中 `if (distance < total_distance) continue` 逻辑 | 零计数（不一定是 bug）        |
+| BEST 模型 4136 源 + point detector                 | 内存爆炸或性能塌陷                                      | OOM/performance     | N                | 限制检测器数量，先用 1-2 个检测器验证                                      | 内存不足或超长运行时间        |
+| `PointFilter.from_xml_element` 未实现              | Python API 反序列化失败                                 | NotImplementedError | N                | Phase 4 补全                                                               | Python 报错                   |
 
 ## 执行计划
 
@@ -311,7 +311,7 @@
 - **难度**：Medium
 - **目标 PR**：#3757
 
-#### Task 1.3: Create unit test for PointFilter Python API
+#### ✅ Task 1.3: Create unit test for PointFilter Python API
 - **目标**：验证 `PointFilter` 的 Python API 正确性（构造、序列化、反序列化）
 - **修改内容**：
   - 文件 `tests/unit_tests/test_filter_point.py`：
@@ -647,23 +647,23 @@
 
 ## 审查日志
 
-| 轮次 | 聚焦 | 发现问题数 | 已修正 | 剩余 |
-|------|------|-----------|--------|------|
-| R1 | 结构完整性 | 5 | 5 | 0 |
-| R2 | 可执行性 | 4 | 4 | 0 |
-| R3 | 风险与边缘 | 3 | 3 | 0 |
-| **终止** | **T1 — 收敛终止 (≥3 轮 + 最近一轮 issue=0)** | | | **0** |
+| 轮次     | 聚焦                                         | 发现问题数 | 已修正 | 剩余  |
+| -------- | -------------------------------------------- | ---------- | ------ | ----- |
+| R1       | 结构完整性                                   | 5          | 5      | 0     |
+| R2       | 可执行性                                     | 4          | 4      | 0     |
+| R3       | 风险与边缘                                   | 3          | 3      | 0     |
+| **终止** | **T1 — 收敛终止 (≥3 轮 + 最近一轮 issue=0)** |            |        | **0** |
 
 ### Completion Summary
 
-| 维度 | 结果 |
-|------|------|
-| 背景与目标 | 完整 — 问题描述、目标、非目标、复用分析均存在 |
-| 技术方案 | 完整 — 方案概述、关键决策、影响范围 |
+| 维度               | 结果                                                                 |
+| ------------------ | -------------------------------------------------------------------- |
+| 背景与目标         | 完整 — 问题描述、目标、非目标、复用分析均存在                        |
+| 技术方案           | 完整 — 方案概述、关键决策、影响范围                                  |
 | Error & Rescue Map | 6 条路径覆盖, 1 CRITICAL GAP (ParticleRay crash) 已纳入 Phase 2 任务 |
-| 执行计划 | 6 Phases, 14 Tasks |
-| 回归检查清单 | 10 项项目特定检查 |
-| 已知局限 | 无 |
+| 执行计划           | 6 Phases, 14 Tasks                                                   |
+| 回归检查清单       | 10 项项目特定检查                                                    |
+| 已知局限           | 无                                                                   |
 
 ### Scope Mode: EXPANSION
 新功能贡献方案，允许适度扩展（e.g. BEST benchmark, community engagement 超越最小测试贡献范围）。
@@ -688,8 +688,8 @@
 
 ## Pre-Delivery Audit (Level: L1-Lite)
 
-| § | Check | Status | Note |
-|---|-------|--------|------|
-| 1 | Unit consistency | ✅ PASS | 所有能量值均使用 eV 单位制，距离使用 cm（与 OpenMC 一致） |
+| §   | Check            | Status | Note                                                      |
+| --- | ---------------- | ------ | --------------------------------------------------------- |
+| 1   | Unit consistency | ✅ PASS | 所有能量值均使用 eV 单位制，距离使用 cm（与 OpenMC 一致） |
 
 Auditor: Plan Architect | Date: 2026-04-13

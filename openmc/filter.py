@@ -873,7 +873,18 @@ class PointFilter(Filter):
         subelement = ET.SubElement(element, 'bins')
         subelement.text = ' '.join(str(b) for item in self.bins 
                                           for b in list(item[0])+[item[1]])
-        return element    
+        return element
+
+    @classmethod
+    def from_xml_element(cls, elem, **kwargs):
+        filter_id = int(get_text(elem, "id"))
+        flat = [float(x) for x in get_text(elem, "bins").split()]
+        bins = []
+        for i in range(0, len(flat), 4):
+            pos = (flat[i], flat[i+1], flat[i+2])
+            r0 = flat[i+3]
+            bins.append((pos, r0))
+        return cls(bins, filter_id=filter_id)
 
 class ParentNuclideFilter(ParticleFilter):
     """Bins tally events based on the parent nuclide
