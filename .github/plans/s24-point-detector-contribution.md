@@ -416,7 +416,7 @@
 - **难度**：Medium → Hard
 - **目标 PR**：#3757 或 #3109（作为 bug report comment）
 
-#### Task 2.2: Analyze diamond inheritance safety
+#### ✅ Task 2.2: Analyze diamond inheritance safety
 - **目标**：静态分析 `ParticleRay` 的 diamond inheritance 是否有潜在的 UB（未定义行为）
 - **修改内容**：
   - 检查以下关键点（代码审查，不修改代码）：
