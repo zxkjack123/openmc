@@ -169,26 +169,29 @@
   - ✅ 总 XS lookup 时间进一步下降
 - **潜在风险**：pinned memory 上限 ~4 GB，需确认不超
 
-#### Task 2.3: HIP Stream 异步流水线（Overlap Transfer + Compute）
+#### ✅ Task 2.3: HIP Stream 异步流水线（Overlap Transfer + Compute）
 - **目标**：使用 HIP stream 实现 H2D copy / kernel compute / D2H copy 三阶段流水线重叠
 - **依赖**：T2.2
 - **修改内容**：
   - 远程 `src/hip/xs_data_device.hip`：
-    - 创建 2 个 HIP stream
-    - 将粒子分为 2 个 chunk
-    - Stream 0: H2D(chunk0) → kernel(chunk0) → D2H(chunk0)
-    - Stream 1: H2D(chunk1) → kernel(chunk1) → D2H(chunk1)
-    - 两个 stream 并发执行
-  - 考虑 3-stage pipeline（triple buffering）如双 buffer 效果不明显
-- **修改边界**：不修改 kernel 内部逻辑、不修改 CPU 路径
-- **测试要求**：
-  - 编译通过
-  - 运行 200K 粒子对比流水线 vs 非流水线时间
-  - k-eff 一致
+    - 创建 2 个 HIP stream（`hipStream_t streams[2]`）
+    - `launch_chunk_async()` helper：memcpy→hipMemcpyAsync→kernel→hipMemcpyAsync per chunk per stream
+    - `calculate_xs_full_on_device()` 重写为 2-stream async pipeline + sync fallback
+    - Async threshold 设为 INT_MAX（禁用）：2-stream 分割导致 per-kernel 并行度减半，造成性能倒退
+  - Block size tuning（64/128/256/512）：run-to-run 方差 40%+，无法得出确定性结论
+- **修改边界**：不修改 kernel 内部逻辑、不修改 CPU 路径 ✅
+- **测试结果**：
+  - 编译通过 ✅
+  - k-eff 一致 ✅（10K: 1.16053±0.00288, 50K: 1.16155±0.00062, 200K: 1.16091±0.00064）
+  - **2-stream async pipeline 200K**: XS=775.9s（T2.2 baseline ~459s）— **69% 性能倒退**
+  - **根因**：粒子分为 2 chunk 后每个 kernel 仅处理 N/2 粒子，GPU 占用率下降；transfer 时间 <0.1% of XS（kernel-dominated），overlap 无实质收益
+  - Block size sweep（50K/10batch）：bs=64 XS=75.7s, bs=128 XS=72.2s, bs=256 XS=58.8-93.5s, bs=512 XS=68.4-100.5s — 方差过大，无显著最优值
 - **验收标准**：
-  - ✅ 流水线重叠有效（总时间 < H2D + kernel + D2H 串行时间）
+  - ❌ 流水线重叠有效 — 重叠无效（transfer <0.1% of compute, pipeline 反而降低 GPU 并行度）
   - ✅ k-eff 一致
-  - ✅ 200K 粒子下总 XS 时间下降 ≥ 15%（相对 T2.2）
+  - ❌ 200K 粒子下总 XS 时间下降 ≥ 15% — 未达标（pipeline 导致 69% 倒退，已禁用）
+- **结论**：XS kernel 为 compute-bound（非 transfer-bound），transfer 优化无法提升性能。
+  Stream/pinned 基础设施保留供 T3.1 dual-DCU 使用。实际性能瓶颈在 kernel 内部内存访问模式。
 - **潜在风险**：gfx936 PCIe 3.0 ×16 可能物理带宽限制重叠收益；双向 DMA 引擎数量未知
 
 #### Task 2.4: 优化后 Benchmark 对比
