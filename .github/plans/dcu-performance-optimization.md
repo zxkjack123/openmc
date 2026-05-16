@@ -129,7 +129,7 @@
 
 ### Phase 2: 核心性能优化
 
-#### Task 2.1: Persistent Device Memory（消除 per-batch alloc）
+#### ✅ Task 2.1: Persistent Device Memory（消除 per-batch alloc）
 - **目标**：将 `xs_data_device.hip` 中的 per-batch hipMalloc/hipFree 改为 simulation-lifetime persistent buffer，预分配最大 particles 所需空间
 - **依赖**：T1.3（需先确认 profiling 数据证实 alloc 是瓶颈之一）
 - **修改内容**：
