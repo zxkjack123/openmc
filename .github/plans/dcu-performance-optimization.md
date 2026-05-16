@@ -91,7 +91,7 @@
   - ✅ 所有 k-eff 一致
 - **潜在风险**：新容器可能不提供 128 核全部可用（需确认 `nproc`）
 
-#### Task 1.3: rocprof Kernel 级 Profiling
+#### ✅ Task 1.3: rocprof Kernel 级 Profiling
 - **目标**：用 rocprof 获取 XS lookup HIP kernel 的精确执行时间、内存带宽利用率、occupancy，定量确认瓶颈
 - **依赖**：T1.1
 - **修改内容**：
