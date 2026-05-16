@@ -7,3 +7,6 @@ particles,mode,repeat,rate_active,rate_inactive,keff,keff_unc,xs,transport,simul
 200000,dcu_v2_1gpu,2,3338.65,3503.91,1.16091,0.00064,606.39,1183.3,1184.0,,,,1186.01,0,persistent+pinned 4T+1DCU
 500000,cpu_history,1,212422.0,222794.0,1.16047,0.0004,,45.223,46.528,,,,49.74,0,64T
 500000,dcu_v2_1gpu,1,3492.33,3610.53,1.16047,0.0004,1438.7,2838.4,2840.0,,,,2842.44,0,persistent+pinned 4T+1DCU
+10000,dcu_v2_2gpu,1,8329.44,,1.16053,0.00288,12.898,,,,,,,25,mpirun -n 2 persistent+pinned 4T+2DCU
+50000,dcu_v2_2gpu,1,7661.01,,1.16155,0.00062,54.766,,,,,,,132,mpirun -n 2 persistent+pinned 4T+2DCU
+200000,dcu_v2_2gpu,1,6918.62,,1.16091,0.00064,236.94,,,,,,,579,mpirun -n 2 persistent+pinned 4T+2DCU

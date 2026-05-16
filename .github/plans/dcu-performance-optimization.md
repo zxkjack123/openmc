@@ -230,7 +230,7 @@
 
 ### Phase 3: Dual-DCU 测试与 Scaling 分析
 
-#### Task 3.1: Dual-DCU 并行 XS Lookup
+#### ✅ Task 3.1: Dual-DCU 并行 XS Lookup
 - **目标**：验证双 DCU 卡并行 XS lookup 的正确性和性能
 - **依赖**：T2.3
 - **修改内容**：
@@ -247,6 +247,21 @@
   - ✅ 2-DCU rate ≥ 1.7× 单 DCU rate（理论 2x，考虑通信开销）
   - ✅ k-eff 与单 DCU / CPU 一致
 - **潜在风险**：MPI 方式更简单可靠，但 NUMA 绑定需正确配置
+- **实际结果**：
+  - 使用 MPI rank 分离方式（`mpirun -n 2 openmc -e -s 4`），每 rank 绑定 1 DCU
+  - 持久化 buffer 在每个 rank 独立分配和管理
+
+  | Particles | 2DCU-v2 Rate | 1DCU-v2 Rate | Scaling | 2DCU-v2/2DCU-v1 | keff |
+  |-----------|-------------|-------------|---------|-----------------|------|
+  | 10K | 8329 | 3493 | 2.38x | 1.22x | 1.16053±0.00288 |
+  | 50K | 7661 | 3700 | 2.07x | 1.04x | 1.16155±0.00062 |
+  | 200K | 6919 | 3115 | 2.22x | 0.98x | 1.16091±0.00064 |
+
+  - 关键发现：
+    - 2-DCU scaling 优秀（2.07-2.38x），超过目标 1.7x
+    - 10K 持久化 buffer 提升最显著（22% over v1）
+    - **200K 2DCU-v2 (6919) > CPU-Event (6310)，首次超越 CPU baseline**
+    - k-eff 与所有其他模式一致
 
 #### Task 3.2: 粒子数 Scaling 测试（完整数据矩阵）
 - **目标**：获取论文发表级的完整 scaling 数据
