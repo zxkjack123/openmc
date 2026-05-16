@@ -75,7 +75,7 @@
   - ✅ DCU calculation rate 与历史数据偏差 < 10%
 - **潜在风险**：新容器性能可能因虚拟化/调度略有波动
 
-#### Task 1.2: CPU-only 对比基线（纯 CPU event 模式）
+#### ✅ Task 1.2: CPU-only 对比基线（纯 CPU event 模式）
 - **目标**：在同一容器、相同参数下获取 CPU-only event 模式和 history 模式性能数据，作为加速比分母
 - **依赖**：T1.1
 - **修改内容**：
