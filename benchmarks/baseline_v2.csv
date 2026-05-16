@@ -1,0 +1,22 @@
+particles,mode,repeat,rate_active,rate_inactive,keff,keff_unc,elapsed,transport,xs_lookups,advancing,surface,collisions,wall,status,notes
+10000,cpu_history,1,194687,,1.16053,0.00288,2.5,,,,,,,OK,64 threads
+10000,cpu_history,2,193024,,1.16053,0.00288,2.4,,,,,,,OK,64 threads
+10000,cpu_event,1,6948,,1.16053,0.00288,30.3,26.6,6.0,12.2,6.1,1.8,,OK,64 threads
+10000,cpu_event,2,7470,,1.16053,0.00288,28.2,,,,,,,OK,64 threads
+10000,dcu_event_1gpu,1,3152,2868,1.16053,0.00288,64.9,70.0,40.9,14.5,10.8,3.6,,OK,4 threads + 1 DCU
+10000,dcu_event_1gpu,2,3134,,1.16053,0.00288,64.7,,,,,,,OK,4 threads + 1 DCU
+10000,dcu_event_2gpu,1,6857,6487,1.16053,0.00288,30.3,29.5,,,,,30.9,OK,4 threads + 2 DCU (mpirun -n 2)
+10000,dcu_event_2gpu,2,6827,6543,1.16053,0.00288,30.4,29.5,,,,,30.9,OK,4 threads + 2 DCU (mpirun -n 2)
+50000,cpu_history,1,268317,,1.16155,0.00062,5.2,,,,,,,OK,64 threads
+50000,cpu_history,2,259356,,1.16155,0.00062,5.3,,,,,,,OK,64 threads
+50000,cpu_event,1,7636,,1.16155,0.00062,132.7,,,,,,,OK,64 threads
+50000,cpu_event,2,7740,,1.16155,0.00062,129.5,,,,,,,OK,64 threads
+50000,dcu_event_1gpu,1,3323,,1.16155,0.00062,302.0,,,,,,,OK,4 threads + 1 DCU
+50000,dcu_event_1gpu,2,3677,,1.16155,0.00062,273.8,,,,,,,OK,4 threads + 1 DCU
+50000,dcu_event_2gpu,1,7387,7308,1.16155,0.00062,136.6,135.6,,,,,137.2,OK,4 threads + 2 DCU (mpirun -n 2)
+50000,dcu_event_2gpu,2,7381,7412,1.16155,0.00062,136.2,135.2,,,,,136.7,OK,4 threads + 2 DCU (mpirun -n 2)
+200000,cpu_history,1,221756,,1.16091,0.00064,19.5,,,,,,,OK,64 threads
+200000,cpu_event,1,6310,,1.16091,0.00064,619.4,,,,,,,OK,64 threads
+200000,dcu_event_1gpu,1,3545,3984,1.16091,0.00064,1098.2,1096.5,561.9,258.7,205.6,66.5,1099.0,OK,4 threads + 1 DCU
+200000,dcu_event_1gpu,2,3051,4111,1.16091,0.00064,1227.7,1225.9,701.2,256.8,199.4,64.6,1228.6,OK,4 threads + 1 DCU
+200000,dcu_event_2gpu,1,7077,7102,1.16091,0.00064,566.1,564.4,,,,,566.7,OK,4 threads + 2 DCU (mpirun -n 2)
