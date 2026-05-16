@@ -150,7 +150,7 @@
   - ✅ 无 memory leak（运行 200K 粒子 50 batches 后内存稳定）
 - **潜在风险**：max_particles 预分配可能过大导致 OOM → 需动态计算上限
 
-#### Task 2.2: Pinned Host Memory（加速 DMA 传输）
+#### ✅ Task 2.2: Pinned Host Memory（加速 DMA 传输）
 - **目标**：host 端粒子数组使用 hipHostMalloc（page-locked memory），使 PCIe DMA 传输带宽最大化
 - **依赖**：T2.1
 - **修改内容**：
