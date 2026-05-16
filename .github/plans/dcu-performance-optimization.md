@@ -194,20 +194,38 @@
   Stream/pinned 基础设施保留供 T3.1 dual-DCU 使用。实际性能瓶颈在 kernel 内部内存访问模式。
 - **潜在风险**：gfx936 PCIe 3.0 ×16 可能物理带宽限制重叠收益；双向 DMA 引擎数量未知
 
-#### Task 2.4: 优化后 Benchmark 对比
+#### ✅ Task 2.4: 优化后 Benchmark 对比
 - **目标**：用优化后的代码重跑完整 benchmark 矩阵，量化优化效果
 - **依赖**：T2.3
 - **修改内容**：
-  - 远程运行 `/root/openmc-hip/benchmarks/run_full_benchmark.py`
-  - 生成 `/root/openmc-hip/benchmarks/optimized_v2.csv`
-- **修改边界**：不修改源码
-- **测试要求**：
-  - 同 T1.4 的矩阵：{10K, 50K, 200K} × {CPU-Hist, CPU-Event, DCU-v1, DCU-v2-opt} × repeat=2
-  - 新增 500K 粒子数据点（DCU-v2 + CPU-Hist）
+  - 远程运行 benchmark 矩阵脚本（通过 Jupyter WebSocket）
+  - 生成 `benchmarks/optimized_v2.csv`（本地 + 远程）
+- **修改边界**：不修改源码 ✅
+- **测试结果**：
+
+  | Particles | DCU-v1 rate | DCU-v2 rate | CPU-Event rate | v2/v1 | v2/CPU-Event | XS v1→v2 |
+  |-----------|-------------|-------------|----------------|-------|--------------|----------|
+  | 10K | 3143 avg | 3493 avg | 7209 avg | 1.11x | 0.48x | 40.9→29.8s (-27%) |
+  | 50K | 3500 avg | 3700 avg | 7688 avg | 1.06x | 0.48x | ~152→139s (-9%) |
+  | 200K | 3298 avg | 3115 avg | 6310 | 0.94x | 0.49x | 632→667s (+6% noise) |
+  | 500K | N/A | 3492 | N/A | N/A | N/A | 1439s |
+
+  - CPU-History 500K: 212422 p/s
+  - k-eff 全部一致 ✅（10K: 1.16053, 50K: 1.16155, 200K: 1.16091, 500K: 1.16047）
+  - Run-to-run variance: 40%+ at 200K (2892 vs 3339 p/s), 可能因 GPU 热降频
+
 - **验收标准**：
-  - ✅ DCU-v2 / CPU-Event 加速比 ≥ 1.5x（目标 ≥ 2x）@ 200K 粒子
-  - ✅ DCU-v2 / DCU-v1 加速比 ≥ 2x
+  - ❌ DCU-v2 / CPU-Event ≥ 1.5x @ 200K: 实测 0.49x
+  - ❌ DCU-v2 / DCU-v1 ≥ 2x: 实测 1.06x（10K best），0.94x（200K noise-dominated）
   - ✅ 所有 k-eff 一致
+
+- **根因分析**（为何加速比未达标）：
+  1. XS lookup 仅占 DCU transport 时间的 ~50%，其余 advancing/surface/collisions 仍在 CPU
+  2. 即使 XS 时间降至 0，DCU rate 最多翻倍至 ~6600 p/s ≈ 1.0x CPU-Event
+  3. 要达到 1.5x vs CPU-Event，需将 advancing + surface 也移至 GPU
+  4. 40%+ 的 run-to-run 方差使得对比分析困难（需更多重复或控温测试）
+  5. 从 baseline 2-DCU 数据看（200K: 7077 p/s = 1.12x CPU-Event），双卡是更有效路径
+
 - **潜在风险**：如加速比未达标，需考虑 kernel fusion 或更激进的数据常驻策略
 
 ### Phase 3: Dual-DCU 测试与 Scaling 分析

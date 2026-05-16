@@ -1,0 +1,9 @@
+particles,mode,repeat,rate_active,rate_inactive,keff,keff_unc,xs,transport,simulation,advancing,surface,collisions,wall,exit,notes
+10000,dcu_v2_1gpu,1,3395.09,3552.82,1.16053,0.00288,28.899,58.231,58.255,,,,60.47,0,persistent+pinned 4T+1DCU
+10000,dcu_v2_1gpu,2,3590.62,3478.02,1.16053,0.00288,30.736,56.128,56.152,,,,57.70,0,persistent+pinned 4T+1DCU
+50000,dcu_v2_1gpu,1,3693.05,4320.27,1.16155,0.00062,143.15,260.83,260.95,,,,262.69,0,persistent+pinned 4T+1DCU
+50000,dcu_v2_1gpu,2,3706.47,3732.84,1.16155,0.00062,135.35,269.21,269.32,,,,271.06,0,persistent+pinned 4T+1DCU
+200000,dcu_v2_1gpu,1,2891.76,3610.24,1.16091,0.00064,728.11,1313.7,1314.4,,,,1316.43,0,persistent+pinned 4T+1DCU
+200000,dcu_v2_1gpu,2,3338.65,3503.91,1.16091,0.00064,606.39,1183.3,1184.0,,,,1186.01,0,persistent+pinned 4T+1DCU
+500000,cpu_history,1,212422.0,222794.0,1.16047,0.0004,,45.223,46.528,,,,49.74,0,64T
+500000,dcu_v2_1gpu,1,3492.33,3610.53,1.16047,0.0004,1438.7,2838.4,2840.0,,,,2842.44,0,persistent+pinned 4T+1DCU
