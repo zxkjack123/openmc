@@ -7,9 +7,12 @@
 #include "openmc/material.h"
 #include "openmc/message_passing.h"
 #include "openmc/nuclide.h"
+#include "openmc/settings.h"
 
 #include <fmt/format.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <numeric>
 #include <vector>
@@ -71,6 +74,133 @@ struct DeviceXSData {
 
 // Global device data instance
 static DeviceXSData device_xs;
+
+//==============================================================================
+// Persistent per-event I/O buffer pool (refactor: eliminates per-call
+// hipMalloc/hipFree on the calculate_xs_*_on_device hot path)
+//==============================================================================
+
+struct DeviceIOBuffers {
+  // Inputs (sized N)
+  double* d_energy = nullptr;
+  double* d_sqrtkT = nullptr;
+  double* d_density_mult = nullptr;
+  int* d_material = nullptr;
+  int* d_i_log_union = nullptr;
+
+  // Macro outputs (sized N)
+  double* d_macro_total = nullptr;
+  double* d_macro_abs = nullptr;
+  double* d_macro_fis = nullptr;
+  double* d_macro_nufis = nullptr;
+
+  // Micro outputs (sized N * max_nucs)
+  double* d_mt = nullptr;
+  double* d_ma = nullptr;
+  double* d_mf = nullptr;
+  double* d_mnf = nullptr;
+  double* d_mpp = nullptr;
+  double* d_mi = nullptr;
+  int* d_mig = nullptr;
+  int* d_mit = nullptr;
+
+  int capacity_n = 0;
+  int capacity_max_nucs = 0;
+
+  void ensure_capacity(int n, int max_nucs);
+  void free_io_buffers();
+};
+
+static DeviceIOBuffers io_buf;
+
+static constexpr double kIOBufGrowFactor = 1.5;
+
+template<typename T>
+static void grow_buffer(T*& p, size_t new_count)
+{
+  if (p) {
+    hipFree(p);
+    p = nullptr;
+  }
+  if (new_count == 0)
+    return;
+  hipError_t e = hipMalloc(&p, new_count * sizeof(T));
+  if (e != hipSuccess) {
+    openmc::fatal_error(fmt::format("hipMalloc {} elems ({} bytes) failed: {}",
+      new_count, new_count * sizeof(T), hipGetErrorString(e)));
+  }
+}
+
+void DeviceIOBuffers::ensure_capacity(int n, int max_nucs)
+{
+  bool need_n = (n > capacity_n);
+  bool need_m = (max_nucs > capacity_max_nucs);
+  if (!need_n && !need_m)
+    return;
+
+  int new_n = need_n
+    ? std::max<int>(static_cast<int>(std::ceil(n * kIOBufGrowFactor)), n)
+    : capacity_n;
+  int new_m = need_m
+    ? std::max<int>(
+        static_cast<int>(std::ceil(max_nucs * kIOBufGrowFactor)), max_nucs)
+    : capacity_max_nucs;
+
+  if (need_n) {
+    grow_buffer(d_energy, new_n);
+    grow_buffer(d_sqrtkT, new_n);
+    grow_buffer(d_density_mult, new_n);
+    grow_buffer(d_material, new_n);
+    grow_buffer(d_i_log_union, new_n);
+    grow_buffer(d_macro_total, new_n);
+    grow_buffer(d_macro_abs, new_n);
+    grow_buffer(d_macro_fis, new_n);
+    grow_buffer(d_macro_nufis, new_n);
+  }
+  if (need_n || need_m) {
+    size_t new_micro = static_cast<size_t>(new_n) * new_m;
+    grow_buffer(d_mt, new_micro);
+    grow_buffer(d_ma, new_micro);
+    grow_buffer(d_mf, new_micro);
+    grow_buffer(d_mnf, new_micro);
+    grow_buffer(d_mpp, new_micro);
+    grow_buffer(d_mi, new_micro);
+    grow_buffer(d_mig, new_micro);
+    grow_buffer(d_mit, new_micro);
+  }
+
+  capacity_n = new_n;
+  capacity_max_nucs = new_m;
+}
+
+void DeviceIOBuffers::free_io_buffers()
+{
+  auto F = [](auto*& p) {
+    if (p) {
+      hipFree(p);
+      p = nullptr;
+    }
+  };
+  F(d_energy);
+  F(d_sqrtkT);
+  F(d_density_mult);
+  F(d_material);
+  F(d_i_log_union);
+  F(d_macro_total);
+  F(d_macro_abs);
+  F(d_macro_fis);
+  F(d_macro_nufis);
+  F(d_mt);
+  F(d_ma);
+  F(d_mf);
+  F(d_mnf);
+  F(d_mpp);
+  F(d_mi);
+  F(d_mig);
+  F(d_mit);
+  capacity_n = 0;
+  capacity_max_nucs = 0;
+}
 
 //==============================================================================
 // Helper: allocate and copy
@@ -271,6 +401,10 @@ void copy_xs_data_to_device()
   fmt::print(" Copied {} nuclides ({} temperature entries), {} materials to "
              "device ({:.1f} MB)\n",
     n_nuc, total_entries, n_mat, mb);
+
+  // Pre-size persistent I/O buffer pool based on expected event-mode demand.
+  io_buf.ensure_capacity(static_cast<int>(settings::max_particles_in_flight),
+    device_xs.max_nucs_per_mat);
 }
 
 //==============================================================================
@@ -305,6 +439,8 @@ void free_xs_data_on_device()
   hip_free_safe(device_xs.d_mat_atom_density);
 
   device_xs = DeviceXSData {};
+
+  io_buf.free_io_buffers();
 
   fmt::print(" Freed device XS data\n");
 }
@@ -510,50 +646,33 @@ void calculate_xs_on_device(int n_particles, const double* h_energy,
   if (n_particles == 0)
     return;
 
+  io_buf.ensure_capacity(n_particles, device_xs.max_nucs_per_mat);
+
   size_t n_d = n_particles * sizeof(double);
   size_t n_i = n_particles * sizeof(int);
 
-  // Allocate device arrays
-  double *d_energy, *d_sqrtkT, *d_total, *d_abs, *d_fis, *d_nufis;
-  int *d_material, *d_i_log_union;
-
-  hipMalloc(&d_energy, n_d);
-  hipMalloc(&d_sqrtkT, n_d);
-  hipMalloc(&d_material, n_i);
-  hipMalloc(&d_i_log_union, n_i);
-  hipMalloc(&d_total, n_d);
-  hipMalloc(&d_abs, n_d);
-  hipMalloc(&d_fis, n_d);
-  hipMalloc(&d_nufis, n_d);
-
-  // Copy inputs to device
-  hipMemcpy(d_energy, h_energy, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(d_sqrtkT, h_sqrtkT, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(d_material, h_material, n_i, hipMemcpyHostToDevice);
-  hipMemcpy(d_i_log_union, h_i_log_union, n_i, hipMemcpyHostToDevice);
+  // Copy inputs to device (buffers persist across calls)
+  hipMemcpy(io_buf.d_energy, h_energy, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_sqrtkT, h_sqrtkT, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_material, h_material, n_i, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_i_log_union, h_i_log_union, n_i, hipMemcpyHostToDevice);
 
   // Launch kernel
-  launch_calculate_xs_kernel(n_particles, d_energy, d_sqrtkT, d_material,
-    d_i_log_union, d_total, d_abs, d_fis, d_nufis);
+  launch_calculate_xs_kernel(n_particles, io_buf.d_energy, io_buf.d_sqrtkT,
+    io_buf.d_material, io_buf.d_i_log_union, io_buf.d_macro_total,
+    io_buf.d_macro_abs, io_buf.d_macro_fis, io_buf.d_macro_nufis);
 
   // Synchronize
   hipDeviceSynchronize();
 
   // Copy results back
-  hipMemcpy(h_macro_total, d_total, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_absorption, d_abs, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_fission, d_fis, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_nu_fission, d_nufis, n_d, hipMemcpyDeviceToHost);
-
-  // Free device arrays
-  hipFree(d_energy);
-  hipFree(d_sqrtkT);
-  hipFree(d_material);
-  hipFree(d_i_log_union);
-  hipFree(d_total);
-  hipFree(d_abs);
-  hipFree(d_fis);
-  hipFree(d_nufis);
+  hipMemcpy(
+    h_macro_total, io_buf.d_macro_total, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(
+    h_macro_absorption, io_buf.d_macro_abs, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_macro_fission, io_buf.d_macro_fis, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(
+    h_macro_nu_fission, io_buf.d_macro_nufis, n_d, hipMemcpyDeviceToHost);
 }
 
 //==============================================================================
@@ -725,54 +844,30 @@ void calculate_xs_full_on_device(int n_particles, int max_nucs,
   if (n_particles == 0)
     return;
 
+  io_buf.ensure_capacity(n_particles, max_nucs);
+
   size_t n_d = n_particles * sizeof(double);
   size_t n_i = n_particles * sizeof(int);
   size_t micro_d = static_cast<size_t>(n_particles) * max_nucs * sizeof(double);
   size_t micro_i = static_cast<size_t>(n_particles) * max_nucs * sizeof(int);
 
-  // Allocate device arrays — inputs
-  double *d_energy, *d_sqrtkT, *d_density_mult;
-  int *d_material, *d_i_log_union;
-  hipMalloc(&d_energy, n_d);
-  hipMalloc(&d_sqrtkT, n_d);
-  hipMalloc(&d_density_mult, n_d);
-  hipMalloc(&d_material, n_i);
-  hipMalloc(&d_i_log_union, n_i);
-
-  // Allocate device arrays — macro output
-  double *d_total, *d_abs, *d_fis, *d_nufis;
-  hipMalloc(&d_total, n_d);
-  hipMalloc(&d_abs, n_d);
-  hipMalloc(&d_fis, n_d);
-  hipMalloc(&d_nufis, n_d);
-
-  // Allocate device arrays — micro output
-  double *d_mt, *d_ma, *d_mf, *d_mnf, *d_mpp, *d_mi;
-  int *d_mig, *d_mit;
-  hipMalloc(&d_mt, micro_d);
-  hipMalloc(&d_ma, micro_d);
-  hipMalloc(&d_mf, micro_d);
-  hipMalloc(&d_mnf, micro_d);
-  hipMalloc(&d_mpp, micro_d);
-  hipMalloc(&d_mi, micro_d);
-  hipMalloc(&d_mig, micro_i);
-  hipMalloc(&d_mit, micro_i);
-
-  // Copy inputs to device
-  hipMemcpy(d_energy, h_energy, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(d_sqrtkT, h_sqrtkT, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(d_density_mult, h_density_mult, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(d_material, h_material, n_i, hipMemcpyHostToDevice);
-  hipMemcpy(d_i_log_union, h_i_log_union, n_i, hipMemcpyHostToDevice);
+  // Copy inputs to device (buffers persist across calls)
+  hipMemcpy(io_buf.d_energy, h_energy, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_sqrtkT, h_sqrtkT, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_density_mult, h_density_mult, n_d, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_material, h_material, n_i, hipMemcpyHostToDevice);
+  hipMemcpy(io_buf.d_i_log_union, h_i_log_union, n_i, hipMemcpyHostToDevice);
 
   // Launch kernel
   const int block_size = 256;
   int grid_size = (n_particles + block_size - 1) / block_size;
 
-  calculate_xs_kernel_full<<<grid_size, block_size>>>(n_particles, d_energy,
-    d_sqrtkT, d_material, d_i_log_union, d_density_mult, d_total, d_abs,
-    d_fis, d_nufis, max_nucs, d_mt, d_ma, d_mf, d_mnf, d_mpp, d_mi, d_mig,
-    d_mit,
+  calculate_xs_kernel_full<<<grid_size, block_size>>>(n_particles,
+    io_buf.d_energy, io_buf.d_sqrtkT, io_buf.d_material, io_buf.d_i_log_union,
+    io_buf.d_density_mult, io_buf.d_macro_total, io_buf.d_macro_abs,
+    io_buf.d_macro_fis, io_buf.d_macro_nufis, max_nucs, io_buf.d_mt,
+    io_buf.d_ma, io_buf.d_mf, io_buf.d_mnf, io_buf.d_mpp, io_buf.d_mi,
+    io_buf.d_mig, io_buf.d_mit,
     // XS data
     device_xs.d_n_temps, device_xs.d_entry_start, device_xs.d_fissionable,
     device_xs.d_kTs, device_xs.d_kTs_offset, device_xs.d_energy_offset,
@@ -791,39 +886,23 @@ void calculate_xs_full_on_device(int n_particles, int max_nucs,
   hipDeviceSynchronize();
 
   // Copy results back — macro
-  hipMemcpy(h_macro_total, d_total, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_absorption, d_abs, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_fission, d_fis, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_nu_fission, d_nufis, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(
+    h_macro_total, io_buf.d_macro_total, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(
+    h_macro_absorption, io_buf.d_macro_abs, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_macro_fission, io_buf.d_macro_fis, n_d, hipMemcpyDeviceToHost);
+  hipMemcpy(
+    h_macro_nu_fission, io_buf.d_macro_nufis, n_d, hipMemcpyDeviceToHost);
 
   // Copy results back — micro
-  hipMemcpy(h_micro_total, d_mt, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_abs, d_ma, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_fis, d_mf, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_nufis, d_mnf, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_pprod, d_mpp, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_interp, d_mi, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_igrid, d_mig, micro_i, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_itemp, d_mit, micro_i, hipMemcpyDeviceToHost);
-
-  // Free device arrays
-  hipFree(d_energy);
-  hipFree(d_sqrtkT);
-  hipFree(d_density_mult);
-  hipFree(d_material);
-  hipFree(d_i_log_union);
-  hipFree(d_total);
-  hipFree(d_abs);
-  hipFree(d_fis);
-  hipFree(d_nufis);
-  hipFree(d_mt);
-  hipFree(d_ma);
-  hipFree(d_mf);
-  hipFree(d_mnf);
-  hipFree(d_mpp);
-  hipFree(d_mi);
-  hipFree(d_mig);
-  hipFree(d_mit);
+  hipMemcpy(h_micro_total, io_buf.d_mt, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_abs, io_buf.d_ma, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_fis, io_buf.d_mf, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_nufis, io_buf.d_mnf, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_pprod, io_buf.d_mpp, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_interp, io_buf.d_mi, micro_d, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_igrid, io_buf.d_mig, micro_i, hipMemcpyDeviceToHost);
+  hipMemcpy(h_micro_itemp, io_buf.d_mit, micro_i, hipMemcpyDeviceToHost);
 }
 
 //==============================================================================
