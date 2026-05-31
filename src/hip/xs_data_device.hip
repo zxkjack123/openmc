@@ -14,7 +14,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <numeric>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace openmc {
@@ -200,6 +203,109 @@ void DeviceIOBuffers::free_io_buffers()
   F(d_mit);
   capacity_n = 0;
   capacity_max_nucs = 0;
+}
+
+//==============================================================================
+// Host staging arena (pinned host memory pool) — feeds hipMemcpyAsync paths.
+// Each named slot grows with the same 1.5x policy as DeviceIOBuffers. If
+// hipHostMalloc fails (e.g. hipErrorOutOfMemory) the slot transparently falls
+// back to a pageable std::malloc'd block and logs a warning; the caller never
+// sees the difference and execution continues (transfers just lose DMA speed).
+//==============================================================================
+
+struct HostStagingArena {
+  struct Slot {
+    void* ptr = nullptr;
+    size_t bytes = 0;
+    bool pinned = false;
+  };
+  std::unordered_map<std::string, Slot> slots_;
+
+  void* alloc_bytes(const char* slot_name, size_t bytes);
+  void free_all();
+};
+
+static HostStagingArena host_arena;
+
+void* HostStagingArena::alloc_bytes(const char* slot_name, size_t bytes)
+{
+  if (bytes == 0)
+    return nullptr;
+
+  std::string key(slot_name);
+  Slot& s = slots_[key];
+  if (s.ptr && s.bytes >= bytes)
+    return s.ptr;
+
+  size_t new_bytes = std::max<size_t>(
+    static_cast<size_t>(std::ceil(bytes * kIOBufGrowFactor)), bytes);
+
+  if (s.ptr) {
+    if (s.pinned)
+      hipHostFree(s.ptr);
+    else
+      std::free(s.ptr);
+    s.ptr = nullptr;
+    s.bytes = 0;
+  }
+
+  void* p = nullptr;
+  hipError_t e = hipHostMalloc(&p, new_bytes, hipHostMallocDefault);
+  if (e == hipSuccess) {
+    s.ptr = p;
+    s.bytes = new_bytes;
+    s.pinned = true;
+  } else {
+    // Pinned allocation failed — fall back to pageable. Common cause is
+    // hipErrorOutOfMemory on many-rank nodes where pinned budget is tight.
+    fmt::print(stderr,
+      " WARN: host_arena pinned alloc failed for slot '{}' ({} bytes): {} "
+      "— falling back to pageable\n",
+      key, new_bytes, hipGetErrorString(e));
+    p = std::malloc(new_bytes);
+    if (!p) {
+      openmc::fatal_error(fmt::format(
+        "host_arena pageable fallback malloc failed for slot '{}' ({} bytes)",
+        key, new_bytes));
+    }
+    s.ptr = p;
+    s.bytes = new_bytes;
+    s.pinned = false;
+  }
+  return s.ptr;
+}
+
+void HostStagingArena::free_all()
+{
+  for (auto& kv : slots_) {
+    Slot& s = kv.second;
+    if (!s.ptr)
+      continue;
+    if (s.pinned)
+      hipHostFree(s.ptr);
+    else
+      std::free(s.ptr);
+    s.ptr = nullptr;
+    s.bytes = 0;
+  }
+  slots_.clear();
+}
+
+double* host_alloc_double(const char* slot_name, std::size_t n)
+{
+  return static_cast<double*>(
+    host_arena.alloc_bytes(slot_name, n * sizeof(double)));
+}
+
+int* host_alloc_int(const char* slot_name, std::size_t n)
+{
+  return static_cast<int*>(
+    host_arena.alloc_bytes(slot_name, n * sizeof(int)));
+}
+
+void host_arena_free()
+{
+  host_arena.free_all();
 }
 
 //==============================================================================
@@ -441,6 +547,7 @@ void free_xs_data_on_device()
   device_xs = DeviceXSData {};
 
   io_buf.free_io_buffers();
+  host_arena_free();
 
   fmt::print(" Freed device XS data\n");
 }

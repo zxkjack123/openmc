@@ -9,6 +9,8 @@
 
 #ifdef OPENMC_USE_HIP
 
+#include <cstddef>
+
 namespace openmc {
 namespace hip {
 
@@ -20,6 +22,16 @@ void copy_xs_data_to_device();
 //! Free device-side cross section data.
 //! Called from openmc_simulation_finalize() or at program exit.
 void free_xs_data_on_device();
+
+//! Allocate (or reuse) a named slot of pinned host memory for staging XS
+//! H2D/D2H transfers. Grows in-place using a 1.5x policy; falls back to
+//! pageable allocation with a warning if hipHostMalloc fails.
+double* host_alloc_double(const char* slot_name, std::size_t n);
+int* host_alloc_int(const char* slot_name, std::size_t n);
+
+//! Release every slot in the host staging arena. Called from
+//! free_xs_data_on_device() at simulation finalize.
+void host_arena_free();
 
 } // namespace hip
 } // namespace openmc
