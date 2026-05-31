@@ -107,10 +107,38 @@ struct DeviceIOBuffers {
   int* d_mig = nullptr;
   int* d_mit = nullptr;
 
-  int capacity_n = 0;
+  // Slot B — second-half of 2-slot double-buffering scheme (see T2.1/T2.2).
+  // Each slot is independently grown; per-slot capacity for the 2-slot path
+  // is ceil(N/2) so total VRAM stays neutral vs the single-slot layout.
+  double* d_energy_b = nullptr;
+  double* d_sqrtkT_b = nullptr;
+  double* d_density_mult_b = nullptr;
+  int* d_material_b = nullptr;
+  int* d_i_log_union_b = nullptr;
+  double* d_macro_total_b = nullptr;
+  double* d_macro_abs_b = nullptr;
+  double* d_macro_fis_b = nullptr;
+  double* d_macro_nufis_b = nullptr;
+  double* d_mt_b = nullptr;
+  double* d_ma_b = nullptr;
+  double* d_mf_b = nullptr;
+  double* d_mnf_b = nullptr;
+  double* d_mpp_b = nullptr;
+  double* d_mi_b = nullptr;
+  int* d_mig_b = nullptr;
+  int* d_mit_b = nullptr;
+
+  int capacity_n = 0;            // slot A capacity (N for single-slot path)
   int capacity_max_nucs = 0;
+  int capacity_n_b = 0;          // slot B capacity (independent grow)
+
+  // Two HIP streams for chunked async pipelining (T2.2 wrapper rewrite).
+  hipStream_t streams[2] = {nullptr, nullptr};
+  bool streams_initialized = false;
 
   void ensure_capacity(int n, int max_nucs);
+  void ensure_capacity_2slot(int n_total, int max_nucs);
+  void init_streams();
   void free_io_buffers();
 };
 
@@ -176,6 +204,66 @@ void DeviceIOBuffers::ensure_capacity(int n, int max_nucs)
   capacity_max_nucs = new_m;
 }
 
+void DeviceIOBuffers::init_streams()
+{
+  if (streams_initialized)
+    return;
+  hipError_t e0 = hipStreamCreate(&streams[0]);
+  hipError_t e1 = hipStreamCreate(&streams[1]);
+  if (e0 != hipSuccess || e1 != hipSuccess) {
+    openmc::fatal_error(fmt::format(
+      "hipStreamCreate failed: stream0={} stream1={}",
+      hipGetErrorString(e0), hipGetErrorString(e1)));
+  }
+  streams_initialized = true;
+}
+
+void DeviceIOBuffers::ensure_capacity_2slot(int n_total, int max_nucs)
+{
+  // Per-slot capacity is ceil(n_total / 2) so the two-chunk pipeline keeps
+  // total VRAM neutral compared to the single-slot ensure_capacity(n_total).
+  int n_per_slot = (n_total + 1) / 2;
+
+  // Slot A reuses the existing fields and ensure_capacity grow policy.
+  ensure_capacity(n_per_slot, max_nucs);
+
+  // Slot B grows independently with the same 1.5x policy.
+  bool need_n = (n_per_slot > capacity_n_b);
+  bool need_m = (max_nucs > capacity_max_nucs);
+  if (need_n || need_m) {
+    int new_n_b = need_n
+      ? std::max<int>(
+          static_cast<int>(std::ceil(n_per_slot * kIOBufGrowFactor)), n_per_slot)
+      : capacity_n_b;
+    int new_m = capacity_max_nucs; // already grown above to cover max_nucs
+
+    if (need_n) {
+      grow_buffer(d_energy_b, new_n_b);
+      grow_buffer(d_sqrtkT_b, new_n_b);
+      grow_buffer(d_density_mult_b, new_n_b);
+      grow_buffer(d_material_b, new_n_b);
+      grow_buffer(d_i_log_union_b, new_n_b);
+      grow_buffer(d_macro_total_b, new_n_b);
+      grow_buffer(d_macro_abs_b, new_n_b);
+      grow_buffer(d_macro_fis_b, new_n_b);
+      grow_buffer(d_macro_nufis_b, new_n_b);
+    }
+    size_t new_micro_b = static_cast<size_t>(new_n_b) * new_m;
+    grow_buffer(d_mt_b, new_micro_b);
+    grow_buffer(d_ma_b, new_micro_b);
+    grow_buffer(d_mf_b, new_micro_b);
+    grow_buffer(d_mnf_b, new_micro_b);
+    grow_buffer(d_mpp_b, new_micro_b);
+    grow_buffer(d_mi_b, new_micro_b);
+    grow_buffer(d_mig_b, new_micro_b);
+    grow_buffer(d_mit_b, new_micro_b);
+
+    capacity_n_b = new_n_b;
+  }
+
+  init_streams();
+}
+
 void DeviceIOBuffers::free_io_buffers()
 {
   auto F = [](auto*& p) {
@@ -201,8 +289,37 @@ void DeviceIOBuffers::free_io_buffers()
   F(d_mi);
   F(d_mig);
   F(d_mit);
+  // Slot B
+  F(d_energy_b);
+  F(d_sqrtkT_b);
+  F(d_density_mult_b);
+  F(d_material_b);
+  F(d_i_log_union_b);
+  F(d_macro_total_b);
+  F(d_macro_abs_b);
+  F(d_macro_fis_b);
+  F(d_macro_nufis_b);
+  F(d_mt_b);
+  F(d_ma_b);
+  F(d_mf_b);
+  F(d_mnf_b);
+  F(d_mpp_b);
+  F(d_mi_b);
+  F(d_mig_b);
+  F(d_mit_b);
   capacity_n = 0;
   capacity_max_nucs = 0;
+  capacity_n_b = 0;
+
+  // Destroy HIP streams if they were created.
+  if (streams_initialized) {
+    if (streams[0])
+      hipStreamDestroy(streams[0]);
+    if (streams[1])
+      hipStreamDestroy(streams[1]);
+    streams[0] = streams[1] = nullptr;
+    streams_initialized = false;
+  }
 }
 
 //==============================================================================
@@ -509,7 +626,10 @@ void copy_xs_data_to_device()
     n_nuc, total_entries, n_mat, mb);
 
   // Pre-size persistent I/O buffer pool based on expected event-mode demand.
-  io_buf.ensure_capacity(static_cast<int>(settings::max_particles_in_flight),
+  // 2-slot allocation: each slot gets ceil(max/2) capacity for streamed
+  // double-buffering (T2.1); existing single-slot wrapper still uses slot A.
+  io_buf.ensure_capacity_2slot(
+    static_cast<int>(settings::max_particles_in_flight),
     device_xs.max_nucs_per_mat);
 }
 
