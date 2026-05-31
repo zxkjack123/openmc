@@ -6,6 +6,7 @@
 
 #ifdef OPENMC_USE_HIP
 #include "openmc/hip/calculate_xs_kernel.h"
+#include "openmc/hip/xs_data_device.h"
 #include "openmc/mgxs_interface.h"
 #include "openmc/nuclide.h"
 #include "openmc/particle_data.h"
@@ -111,9 +112,8 @@ void process_calculate_xs_events(SharedArray<EventQueueItem>& queue)
     std::vector<int> gpu_batch_idx;  // queue indices for GPU
     std::vector<int> cpu_fallback_idx; // queue indices for CPU
 
-    std::vector<double> h_energy, h_sqrtkT, h_density_mult;
-    std::vector<int> h_material, h_i_log_union;
-
+    // Pass 1: classify only. Sizing of pinned staging slots is deferred
+    // until n_gpu is known so arena slots can be grown to the exact need.
     for (int i = 0; i < n; i++) {
       const Particle& p = simulation::particles[queue[i].idx];
       int mat = p.material();
@@ -143,17 +143,6 @@ void process_calculate_xs_events(SharedArray<EventQueueItem>& queue)
         cpu_fallback_idx.push_back(i);
       } else {
         gpu_batch_idx.push_back(i);
-        h_energy.push_back(p.E());
-        h_sqrtkT.push_back(p.sqrtkT());
-        h_material.push_back(mat);
-        h_density_mult.push_back(p.density_mult());
-        if (p.E() > 0.0) {
-          h_i_log_union.push_back(static_cast<int>(
-            std::log(p.E() / data::energy_min[neutron]) /
-            simulation::log_spacing));
-        } else {
-          h_i_log_union.push_back(0);
-        }
       }
     }
 
@@ -163,21 +152,62 @@ void process_calculate_xs_events(SharedArray<EventQueueItem>& queue)
     if (n_gpu > 0) {
       int micro_size = n_gpu * max_nucs;
 
-      // Output arrays
-      std::vector<double> h_macro_total(n_gpu), h_macro_abs(n_gpu),
-        h_macro_fis(n_gpu), h_macro_nufis(n_gpu);
-      std::vector<double> h_micro_total(micro_size), h_micro_abs(micro_size),
-        h_micro_fis(micro_size), h_micro_nufis(micro_size),
-        h_micro_pprod(micro_size), h_micro_interp(micro_size);
-      std::vector<int> h_micro_igrid(micro_size), h_micro_itemp(micro_size);
+      // Pinned host staging — allocated from HostStagingArena (T1.1).
+      // Slot names are unique per buffer to allow per-slot growth tracking.
+      double* h_energy = hip::host_alloc_double("xs_in_energy", n_gpu);
+      double* h_sqrtkT = hip::host_alloc_double("xs_in_sqrtkT", n_gpu);
+      double* h_density_mult =
+        hip::host_alloc_double("xs_in_density_mult", n_gpu);
+      int* h_material = hip::host_alloc_int("xs_in_material", n_gpu);
+      int* h_i_log_union = hip::host_alloc_int("xs_in_i_log_union", n_gpu);
 
-      hip::calculate_xs_full_on_device(n_gpu, max_nucs, h_energy.data(),
-        h_sqrtkT.data(), h_material.data(), h_i_log_union.data(),
-        h_density_mult.data(), h_macro_total.data(), h_macro_abs.data(),
-        h_macro_fis.data(), h_macro_nufis.data(), h_micro_total.data(),
-        h_micro_abs.data(), h_micro_fis.data(), h_micro_nufis.data(),
-        h_micro_pprod.data(), h_micro_interp.data(), h_micro_igrid.data(),
-        h_micro_itemp.data());
+      // Pass 2: fill pinned input buffers from particles.
+      for (int b = 0; b < n_gpu; b++) {
+        int qi = gpu_batch_idx[b];
+        const Particle& p = simulation::particles[queue[qi].idx];
+        h_energy[b] = p.E();
+        h_sqrtkT[b] = p.sqrtkT();
+        h_material[b] = p.material();
+        h_density_mult[b] = p.density_mult();
+        if (p.E() > 0.0) {
+          h_i_log_union[b] = static_cast<int>(
+            std::log(p.E() / data::energy_min[neutron]) /
+            simulation::log_spacing);
+        } else {
+          h_i_log_union[b] = 0;
+        }
+      }
+
+      // Output buffers (pinned).
+      double* h_macro_total = hip::host_alloc_double("xs_out_macro_total", n_gpu);
+      double* h_macro_abs = hip::host_alloc_double("xs_out_macro_abs", n_gpu);
+      double* h_macro_fis = hip::host_alloc_double("xs_out_macro_fis", n_gpu);
+      double* h_macro_nufis =
+        hip::host_alloc_double("xs_out_macro_nufis", n_gpu);
+      double* h_micro_total =
+        hip::host_alloc_double("xs_out_micro_total", micro_size);
+      double* h_micro_abs =
+        hip::host_alloc_double("xs_out_micro_abs", micro_size);
+      double* h_micro_fis =
+        hip::host_alloc_double("xs_out_micro_fis", micro_size);
+      double* h_micro_nufis =
+        hip::host_alloc_double("xs_out_micro_nufis", micro_size);
+      double* h_micro_pprod =
+        hip::host_alloc_double("xs_out_micro_pprod", micro_size);
+      double* h_micro_interp =
+        hip::host_alloc_double("xs_out_micro_interp", micro_size);
+      int* h_micro_igrid =
+        hip::host_alloc_int("xs_out_micro_igrid", micro_size);
+      int* h_micro_itemp =
+        hip::host_alloc_int("xs_out_micro_itemp", micro_size);
+
+      hip::calculate_xs_full_on_device(n_gpu, max_nucs, h_energy,
+        h_sqrtkT, h_material, h_i_log_union,
+        h_density_mult, h_macro_total, h_macro_abs,
+        h_macro_fis, h_macro_nufis, h_micro_total,
+        h_micro_abs, h_micro_fis, h_micro_nufis,
+        h_micro_pprod, h_micro_interp, h_micro_igrid,
+        h_micro_itemp);
 
       // Write GPU results back to particles
       for (int b = 0; b < n_gpu; b++) {
