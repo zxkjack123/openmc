@@ -834,7 +834,7 @@ __global__ void calculate_xs_kernel(int n_particles,
 void launch_calculate_xs_kernel(int n_particles, const double* d_energy,
   const double* d_sqrtkT, const int* d_material, const int* d_i_log_union,
   double* d_macro_total, double* d_macro_absorption, double* d_macro_fission,
-  double* d_macro_nu_fission)
+  double* d_macro_nu_fission, hipStream_t stream)
 {
   if (n_particles == 0)
     return;
@@ -842,7 +842,7 @@ void launch_calculate_xs_kernel(int n_particles, const double* d_energy,
   const int block_size = 256;
   int grid_size = (n_particles + block_size - 1) / block_size;
 
-  calculate_xs_kernel<<<grid_size, block_size>>>(n_particles, d_energy,
+  calculate_xs_kernel<<<grid_size, block_size, 0, stream>>>(n_particles, d_energy,
     d_sqrtkT, d_material, d_i_log_union, d_macro_total, d_macro_absorption,
     d_macro_fission, d_macro_nu_fission,
     // XS data
@@ -1071,65 +1071,123 @@ void calculate_xs_full_on_device(int n_particles, int max_nucs,
   if (n_particles == 0)
     return;
 
-  io_buf.ensure_capacity(n_particles, max_nucs);
+  // 2-slot: each slot gets ceil(n/2) capacity for streamed double-buffering
+  io_buf.ensure_capacity_2slot(n_particles, max_nucs);
 
-  size_t n_d = n_particles * sizeof(double);
-  size_t n_i = n_particles * sizeof(int);
-  size_t micro_d = static_cast<size_t>(n_particles) * max_nucs * sizeof(double);
-  size_t micro_i = static_cast<size_t>(n_particles) * max_nucs * sizeof(int);
+  int chunk_a = n_particles / 2;
+  int chunk_b = n_particles - chunk_a;
 
-  // Copy inputs to device (buffers persist across calls)
-  hipMemcpy(io_buf.d_energy, h_energy, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(io_buf.d_sqrtkT, h_sqrtkT, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(io_buf.d_density_mult, h_density_mult, n_d, hipMemcpyHostToDevice);
-  hipMemcpy(io_buf.d_material, h_material, n_i, hipMemcpyHostToDevice);
-  hipMemcpy(io_buf.d_i_log_union, h_i_log_union, n_i, hipMemcpyHostToDevice);
+  size_t n_d_a = chunk_a * sizeof(double);
+  size_t n_i_a = chunk_a * sizeof(int);
+  size_t n_d_b = chunk_b * sizeof(double);
+  size_t n_i_b = chunk_b * sizeof(int);
+  size_t micro_d_a = static_cast<size_t>(chunk_a) * max_nucs * sizeof(double);
+  size_t micro_i_a = static_cast<size_t>(chunk_a) * max_nucs * sizeof(int);
+  size_t micro_d_b = static_cast<size_t>(chunk_b) * max_nucs * sizeof(double);
+  size_t micro_i_b = static_cast<size_t>(chunk_b) * max_nucs * sizeof(int);
+  constexpr int kBlockSize = 256;
 
-  // Launch kernel
-  const int block_size = 256;
-  int grid_size = (n_particles + block_size - 1) / block_size;
+  // --- Chunk A (first half) → slot A, stream 0 ---
+  if (chunk_a > 0) {
+    hipMemcpyAsync(io_buf.d_energy,       h_energy,       n_d_a, hipMemcpyHostToDevice, io_buf.streams[0]);
+    hipMemcpyAsync(io_buf.d_sqrtkT,       h_sqrtkT,       n_d_a, hipMemcpyHostToDevice, io_buf.streams[0]);
+    hipMemcpyAsync(io_buf.d_density_mult, h_density_mult,  n_d_a, hipMemcpyHostToDevice, io_buf.streams[0]);
+    hipMemcpyAsync(io_buf.d_material,     h_material,      n_i_a, hipMemcpyHostToDevice, io_buf.streams[0]);
+    hipMemcpyAsync(io_buf.d_i_log_union,  h_i_log_union,   n_i_a, hipMemcpyHostToDevice, io_buf.streams[0]);
 
-  calculate_xs_kernel_full<<<grid_size, block_size>>>(n_particles,
-    io_buf.d_energy, io_buf.d_sqrtkT, io_buf.d_material, io_buf.d_i_log_union,
-    io_buf.d_density_mult, io_buf.d_macro_total, io_buf.d_macro_abs,
-    io_buf.d_macro_fis, io_buf.d_macro_nufis, max_nucs, io_buf.d_mt,
-    io_buf.d_ma, io_buf.d_mf, io_buf.d_mnf, io_buf.d_mpp, io_buf.d_mi,
-    io_buf.d_mig, io_buf.d_mit,
-    // XS data
-    device_xs.d_n_temps, device_xs.d_entry_start, device_xs.d_fissionable,
-    device_xs.d_kTs, device_xs.d_kTs_offset, device_xs.d_energy_offset,
-    device_xs.d_energy_size, device_xs.d_grid_index_offset, device_xs.d_energy,
-    device_xs.d_grid_index, device_xs.d_xs, device_xs.d_xs_offset,
-    // Material data
-    device_xs.d_mat_n_nuclides, device_xs.d_mat_nuclide_offset,
-    device_xs.d_mat_nuclide_ids, device_xs.d_mat_atom_density);
+    int grid_a = (chunk_a + kBlockSize - 1) / kBlockSize;
+    calculate_xs_kernel_full<<<grid_a, kBlockSize, 0, io_buf.streams[0]>>>(chunk_a,
+      io_buf.d_energy, io_buf.d_sqrtkT, io_buf.d_material, io_buf.d_i_log_union,
+      io_buf.d_density_mult, io_buf.d_macro_total, io_buf.d_macro_abs,
+      io_buf.d_macro_fis, io_buf.d_macro_nufis, max_nucs, io_buf.d_mt,
+      io_buf.d_ma, io_buf.d_mf, io_buf.d_mnf, io_buf.d_mpp, io_buf.d_mi,
+      io_buf.d_mig, io_buf.d_mit,
+      device_xs.d_n_temps, device_xs.d_entry_start, device_xs.d_fissionable,
+      device_xs.d_kTs, device_xs.d_kTs_offset, device_xs.d_energy_offset,
+      device_xs.d_energy_size, device_xs.d_grid_index_offset, device_xs.d_energy,
+      device_xs.d_grid_index, device_xs.d_xs, device_xs.d_xs_offset,
+      device_xs.d_mat_n_nuclides, device_xs.d_mat_nuclide_offset,
+      device_xs.d_mat_nuclide_ids, device_xs.d_mat_atom_density);
 
-  hipError_t err = hipGetLastError();
-  if (err != hipSuccess) {
-    openmc::fatal_error(
-      fmt::format("HIP full kernel launch failed: {}", hipGetErrorString(err)));
+    hipError_t err_launch_a = hipGetLastError();
+    if (err_launch_a != hipSuccess) {
+      openmc::fatal_error(
+        fmt::format("HIP full kernel launch failed (chunk A): {}", hipGetErrorString(err_launch_a)));
+    }
+
+    hipMemcpyAsync(h_macro_total,       io_buf.d_macro_total,  n_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_macro_absorption,  io_buf.d_macro_abs,    n_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_macro_fission,     io_buf.d_macro_fis,    n_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_macro_nu_fission,  io_buf.d_macro_nufis,  n_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_total,       io_buf.d_mt,           micro_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_abs,         io_buf.d_ma,           micro_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_fis,         io_buf.d_mf,           micro_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_nufis,       io_buf.d_mnf,          micro_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_pprod,       io_buf.d_mpp,          micro_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_interp,      io_buf.d_mi,           micro_d_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_igrid,       io_buf.d_mig,          micro_i_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
+    hipMemcpyAsync(h_micro_itemp,       io_buf.d_mit,          micro_i_a, hipMemcpyDeviceToHost, io_buf.streams[0]);
   }
 
-  hipDeviceSynchronize();
+  // --- Chunk B (second half) → slot B, stream 1 ---
+  if (chunk_b > 0) {
+    hipMemcpyAsync(io_buf.d_energy_b,       h_energy + chunk_a,       n_d_b, hipMemcpyHostToDevice, io_buf.streams[1]);
+    hipMemcpyAsync(io_buf.d_sqrtkT_b,       h_sqrtkT + chunk_a,       n_d_b, hipMemcpyHostToDevice, io_buf.streams[1]);
+    hipMemcpyAsync(io_buf.d_density_mult_b, h_density_mult + chunk_a,  n_d_b, hipMemcpyHostToDevice, io_buf.streams[1]);
+    hipMemcpyAsync(io_buf.d_material_b,     h_material + chunk_a,      n_i_b, hipMemcpyHostToDevice, io_buf.streams[1]);
+    hipMemcpyAsync(io_buf.d_i_log_union_b,  h_i_log_union + chunk_a,   n_i_b, hipMemcpyHostToDevice, io_buf.streams[1]);
 
-  // Copy results back — macro
-  hipMemcpy(
-    h_macro_total, io_buf.d_macro_total, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(
-    h_macro_absorption, io_buf.d_macro_abs, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_macro_fission, io_buf.d_macro_fis, n_d, hipMemcpyDeviceToHost);
-  hipMemcpy(
-    h_macro_nu_fission, io_buf.d_macro_nufis, n_d, hipMemcpyDeviceToHost);
+    int grid_b = (chunk_b + kBlockSize - 1) / kBlockSize;
+    calculate_xs_kernel_full<<<grid_b, kBlockSize, 0, io_buf.streams[1]>>>(chunk_b,
+      io_buf.d_energy_b, io_buf.d_sqrtkT_b, io_buf.d_material_b, io_buf.d_i_log_union_b,
+      io_buf.d_density_mult_b, io_buf.d_macro_total_b, io_buf.d_macro_abs_b,
+      io_buf.d_macro_fis_b, io_buf.d_macro_nufis_b, max_nucs, io_buf.d_mt_b,
+      io_buf.d_ma_b, io_buf.d_mf_b, io_buf.d_mnf_b, io_buf.d_mpp_b, io_buf.d_mi_b,
+      io_buf.d_mig_b, io_buf.d_mit_b,
+      device_xs.d_n_temps, device_xs.d_entry_start, device_xs.d_fissionable,
+      device_xs.d_kTs, device_xs.d_kTs_offset, device_xs.d_energy_offset,
+      device_xs.d_energy_size, device_xs.d_grid_index_offset, device_xs.d_energy,
+      device_xs.d_grid_index, device_xs.d_xs, device_xs.d_xs_offset,
+      device_xs.d_mat_n_nuclides, device_xs.d_mat_nuclide_offset,
+      device_xs.d_mat_nuclide_ids, device_xs.d_mat_atom_density);
 
-  // Copy results back — micro
-  hipMemcpy(h_micro_total, io_buf.d_mt, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_abs, io_buf.d_ma, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_fis, io_buf.d_mf, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_nufis, io_buf.d_mnf, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_pprod, io_buf.d_mpp, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_interp, io_buf.d_mi, micro_d, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_igrid, io_buf.d_mig, micro_i, hipMemcpyDeviceToHost);
-  hipMemcpy(h_micro_itemp, io_buf.d_mit, micro_i, hipMemcpyDeviceToHost);
+    hipError_t err_launch_b = hipGetLastError();
+    if (err_launch_b != hipSuccess) {
+      openmc::fatal_error(
+        fmt::format("HIP full kernel launch failed (chunk B): {}", hipGetErrorString(err_launch_b)));
+    }
+
+    // D2H output — destination host pointers offset by chunk_a for macro,
+    // by chunk_a * max_nucs for micro (particle-major layout).
+    hipMemcpyAsync(h_macro_total + chunk_a,      io_buf.d_macro_total_b, n_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_macro_absorption + chunk_a, io_buf.d_macro_abs_b,   n_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_macro_fission + chunk_a,    io_buf.d_macro_fis_b,   n_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_macro_nu_fission + chunk_a, io_buf.d_macro_nufis_b, n_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_total + chunk_a * max_nucs,  io_buf.d_mt_b,  micro_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_abs + chunk_a * max_nucs,    io_buf.d_ma_b,  micro_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_fis + chunk_a * max_nucs,    io_buf.d_mf_b,  micro_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_nufis + chunk_a * max_nucs,  io_buf.d_mnf_b, micro_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_pprod + chunk_a * max_nucs,  io_buf.d_mpp_b, micro_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_interp + chunk_a * max_nucs, io_buf.d_mi_b,  micro_d_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_igrid + chunk_a * max_nucs,  io_buf.d_mig_b, micro_i_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+    hipMemcpyAsync(h_micro_itemp + chunk_a * max_nucs,  io_buf.d_mit_b, micro_i_b, hipMemcpyDeviceToHost, io_buf.streams[1]);
+  }
+
+  // Sync both streams and check for errors
+  if (chunk_a > 0) {
+    hipError_t sync_err = hipStreamSynchronize(io_buf.streams[0]);
+    if (sync_err != hipSuccess) {
+      openmc::fatal_error(
+        fmt::format("hipStreamSynchronize failed (stream 0): {}", hipGetErrorString(sync_err)));
+    }
+  }
+  if (chunk_b > 0) {
+    hipError_t sync_err = hipStreamSynchronize(io_buf.streams[1]);
+    if (sync_err != hipSuccess) {
+      openmc::fatal_error(
+        fmt::format("hipStreamSynchronize failed (stream 1): {}", hipGetErrorString(sync_err)));
+    }
+  }
 }
 
 //==============================================================================

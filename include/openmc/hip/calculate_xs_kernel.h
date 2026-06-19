@@ -3,6 +3,8 @@
 
 #ifdef OPENMC_USE_HIP
 
+#include <hip/hip_runtime.h>
+
 namespace openmc {
 namespace hip {
 
@@ -29,10 +31,11 @@ namespace hip {
 //! \param d_macro_absorption [out] Macroscopic absorption XS per particle
 //! \param d_macro_fission  [out] Macroscopic fission XS per particle
 //! \param d_macro_nu_fission [out] Macroscopic nu-fission XS per particle
+//! \param stream           HIP stream for async kernel launch (default = default stream)
 void launch_calculate_xs_kernel(int n_particles, const double* d_energy,
   const double* d_sqrtkT, const int* d_material, const int* d_i_log_union,
   double* d_macro_total, double* d_macro_absorption, double* d_macro_fission,
-  double* d_macro_nu_fission);
+  double* d_macro_nu_fission, hipStream_t stream = nullptr);
 
 //! \brief Host-callable wrapper: allocate device memory, launch kernel, copy
 //! results back. Takes host arrays in, returns host arrays out.
