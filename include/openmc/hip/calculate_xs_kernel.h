@@ -31,7 +31,8 @@ namespace hip {
 //! \param d_macro_absorption [out] Macroscopic absorption XS per particle
 //! \param d_macro_fission  [out] Macroscopic fission XS per particle
 //! \param d_macro_nu_fission [out] Macroscopic nu-fission XS per particle
-//! \param stream           HIP stream for async kernel launch (default = default stream)
+//! \param stream           HIP stream for async kernel launch (default =
+//! default stream)
 void launch_calculate_xs_kernel(int n_particles, const double* d_energy,
   const double* d_sqrtkT, const int* d_material, const int* d_i_log_union,
   double* d_macro_total, double* d_macro_absorption, double* d_macro_fission,
@@ -62,7 +63,8 @@ void calculate_xs_on_device(int n_particles, const double* h_energy,
 //! material (same order as Material::nuclide_).
 //!
 //! \param n_particles        Number of particles
-//! \param max_nucs           Max nuclides per material (stride for micro arrays)
+//! \param max_nucs           Max nuclides per material (stride for micro
+//! arrays)
 //! \param h_energy           [in]  Particle energies
 //! \param h_sqrtkT           [in]  sqrt(kT) values
 //! \param h_material         [in]  Material indices (-1 = void)
@@ -77,13 +79,14 @@ void calculate_xs_on_device(int n_particles, const double* h_energy,
 //! \param h_micro_fis        [out] Per-nuclide fission [n * max_nucs]
 //! \param h_micro_nufis      [out] Per-nuclide nu-fission [n * max_nucs]
 //! \param h_micro_pprod      [out] Per-nuclide photon production [n * max_nucs]
-//! \param h_micro_interp     [out] Per-nuclide interpolation factor [n * max_nucs]
+//! \param h_micro_interp     [out] Per-nuclide interpolation factor [n *
+//! max_nucs]
 //! \param h_micro_igrid      [out] Per-nuclide grid index [n * max_nucs]
 //! \param h_micro_itemp      [out] Per-nuclide temperature index [n * max_nucs]
 void calculate_xs_full_on_device(int n_particles, int max_nucs,
   const double* h_energy, const double* h_sqrtkT, const int* h_material,
-  const int* h_i_log_union, const double* h_density_mult,
-  double* h_macro_total, double* h_macro_absorption, double* h_macro_fission,
+  const int* h_i_log_union, const double* h_density_mult, double* h_macro_total,
+  double* h_macro_absorption, double* h_macro_fission,
   double* h_macro_nu_fission, double* h_micro_total, double* h_micro_abs,
   double* h_micro_fis, double* h_micro_nufis, double* h_micro_pprod,
   double* h_micro_interp, int* h_micro_igrid, int* h_micro_itemp);
