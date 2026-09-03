@@ -110,3 +110,6 @@ CMakeSettings.json
 
 # Python pickle files
 *.pkl
+
+# Local project management metadata
+.pm*
