@@ -11,7 +11,9 @@
    `experiment` 语义下的"真值"判定。
 2. 案例适合作为 **physics.code-to-code 的 PWR 热谱案例**，而不是
    OpenMC 仓库内的 regression 参考（OpenMC 仓库内 k-eff 回归无跨代码含义，
-   且 `tests/regression_tests/pincell` 已有同类覆盖）。
+   且 `pwr_pin_cell` 示例已被 15+ 个回归测试——`mgxs_library_*`、
+   `random_ray_*`、`model_xml` 等——复用为输入模型，再新增独立
+   pin-cell regression 属重复建设）。
 3. 实现评估：OpenMC 侧已有 `openmc.examples.pwr_pin_cell()`（BEAVRS
    beginning-of-cycle 2.4 w/o UO₂），但默认 100 粒子/10 批仅作 smoke；
    跨代码互比需要**独立高统计计算脚本**（≥200 active batches、≥10⁵
